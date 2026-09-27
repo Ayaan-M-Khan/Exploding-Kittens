@@ -1,0 +1,3405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Exploding Kittens</title>
+  <meta name="description" content="A browser-based digital card game clone of Exploding Kittens with interactive tabletop, gauge, comic art, and AI bots." />
+  <meta property="og:title" content="Exploding Kittens" />
+  <meta property="og:description" content="A browser-based digital card game clone of Exploding Kittens with interactive tabletop, gauge, comic art, and AI bots." />
+  
+  <!-- Google Fonts: Bangers & Fredoka -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Fredoka:wght@400;600;700&family=Montserrat:wght@800;900&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            bangers: ['Bangers', 'cursive'],
+            fredoka: ['Fredoka', 'sans-serif'],
+            montserrat: ['Montserrat', 'sans-serif'],
+          },
+          keyframes: {
+            shake: {
+              '0%, 100%': { transform: 'translate(0, 0) rotate(0deg)' },
+              '10%, 30%, 50%, 70%, 90%': { transform: 'translate(-5px, 3px) rotate(-1deg)' },
+              '20%, 40%, 60%, 80%': { transform: 'translate(5px, -3px) rotate(1deg)' },
+            },
+            pop: {
+              '0%': { transform: 'scale(0.8)', opacity: '0' },
+              '70%': { transform: 'scale(1.05)' },
+              '100%': { transform: 'scale(1)', opacity: '1' },
+            }
+          },
+          animation: {
+            shake: 'shake 0.6s cubic-bezier(.36,.07,.19,.97) both',
+            pop: 'pop 0.3s ease-out forwards',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Socket.io client automatically served by backend -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <style>
+    /* Comic wood tabletop aesthetic matching digital game screenshots */
+    .wood-tabletop {
+      background-color: #2b170c;
+      background-image: 
+        radial-gradient(ellipse at center, rgba(146, 64, 14, 0.45) 0%, rgba(20, 10, 5, 0.95) 85%),
+        repeating-linear-gradient(
+          0deg,
+          rgba(0, 0, 0, 0.25) 0px,
+          rgba(0, 0, 0, 0.25) 2px,
+          transparent 2px,
+          transparent 32px
+        );
+      box-shadow: inset 0 0 160px rgba(0, 0, 0, 0.9);
+    }
+
+    .comic-btn {
+      position: relative;
+      border: 3px solid #1c0f08;
+      box-shadow: 0 6px 0 #1c0f08;
+      transition: all 0.15s ease-in-out;
+    }
+    .comic-btn:hover {
+      box-shadow: 0 3px 0 #1c0f08;
+      transform: translateY(3px);
+    }
+    .comic-btn:active {
+      box-shadow: 0 0 0 #1c0f08;
+      transform: translateY(6px);
+    }
+
+    /* Comic card styles */
+    .card-item {
+      transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease;
+      transform-origin: bottom center;
+      user-select: none;
+    }
+    .card-item:hover {
+      transform: translateY(-24px) scale(1.05) !important;
+      z-index: 40 !important;
+      box-shadow: 0 14px 28px rgba(0,0,0,0.6);
+    }
+    .card-item.selected {
+      transform: translateY(-34px) scale(1.08) !important;
+      z-index: 50 !important;
+      border-color: #fbbf24 !important;
+      box-shadow: 0 0 20px rgba(251, 191, 36, 0.8), 0 16px 30px rgba(0,0,0,0.7) !important;
+    }
+
+    /* Custom parchment scroll texture */
+    .parchment {
+      background: #fbf5e5;
+      background-image: radial-gradient(circle at 50% 50%, rgba(254, 243, 199, 0.9), rgba(243, 222, 177, 0.9));
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), inset 0 0 15px rgba(180, 83, 9, 0.15);
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #854d0e;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="bg-stone-950 text-stone-100 font-fredoka overflow-hidden select-none m-0 p-0">
+
+  <!-- ============================================================ -->
+  <!-- 1. SCREEN: MAIN MENU                                         -->
+  <!-- ============================================================ -->
+  <div id="screen-menu" class="w-full h-screen bg-[#651010] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+    <!-- Radial comic vignette background -->
+    <div class="absolute inset-0 bg-[radial-gradient(circle_at_center,_#991b1b_0%,_#450a0a_100%)] opacity-95"></div>
+
+    <!-- Decorative background kitten silhouettes -->
+    <div class="absolute -top-12 -left-12 opacity-10 text-white pointer-events-none">
+      <svg class="w-80 h-80 fill-current" viewBox="0 0 100 100">
+        <path d="M20,70 Q15,40 25,25 Q35,35 45,30 Q55,30 65,25 Q75,40 70,70 Q45,85 20,70 Z" />
+        <polygon points="25,32 15,10 40,25" />
+        <polygon points="65,25 90,10 80,32" />
+      </svg>
+    </div>
+    <div class="absolute -bottom-16 -right-16 opacity-10 text-white pointer-events-none">
+      <svg class="w-96 h-96 fill-current" viewBox="0 0 100 100">
+        <path d="M20,70 Q15,40 25,25 Q35,35 45,30 Q55,30 65,25 Q75,40 70,70 Q45,85 20,70 Z" />
+        <polygon points="25,32 15,10 40,25" />
+        <polygon points="65,25 90,10 80,32" />
+      </svg>
+    </div>
+
+    <!-- Menu Content Container -->
+    <div class="relative z-10 flex flex-col md:flex-row items-center justify-center gap-8 md:gap-16 max-w-5xl w-full">
+      
+      <!-- Left: Logo & Glowing Kitten -->
+      <div class="flex flex-col items-center text-center">
+        <div class="flex flex-col items-center leading-none">
+          <span class="font-bangers text-5xl sm:text-7xl lg:text-8xl text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-orange-400 to-red-500 tracking-wider drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]">
+            EXPLODING
+          </span>
+          <span class="font-bangers text-6xl sm:text-8xl lg:text-9xl text-white tracking-widest leading-none drop-shadow-[0_6px_10px_rgba(0,0,0,0.9)] -mt-2 sm:-mt-4">
+            KITTENS
+          </span>
+        </div>
+
+        <!-- Glowing Silhouette Kitten -->
+        <div class="mt-4 sm:mt-6 text-amber-500 drop-shadow-[0_0_30px_rgba(245,158,11,0.6)] cursor-pointer hover:scale-105 transition-transform duration-300">
+          <svg class="w-36 h-36 sm:w-52 sm:h-52 fill-current" viewBox="0 0 120 120">
+            <!-- Tail -->
+            <path d="M25,85 Q10,75 12,50 Q14,35 24,32 Q28,45 22,60 Q18,72 32,80 Z" fill="#d97706" />
+            <!-- Body -->
+            <path d="M30,85 Q25,48 40,35 Q60,30 80,35 Q95,48 90,85 Q60,102 30,85 Z" fill="#ea580c" />
+            <!-- Ears -->
+            <polygon points="38,40 28,15 54,32" fill="#dc2626" stroke="#450a0a" stroke-width="3" />
+            <polygon points="82,40 92,15 66,32" fill="#dc2626" stroke="#450a0a" stroke-width="3" />
+            <!-- Glowing Yellow Eyes -->
+            <ellipse cx="48" cy="50" rx="7" ry="9" fill="#facc15" stroke="#713f12" stroke-width="2" />
+            <ellipse cx="72" cy="50" rx="7" ry="9" fill="#facc15" stroke="#713f12" stroke-width="2" />
+            <ellipse cx="49" cy="50" rx="2" ry="7" fill="#000" />
+            <ellipse cx="71" cy="50" rx="2" ry="7" fill="#000" />
+            <!-- Nose & Whiskers -->
+            <polygon points="60,60 55,56 65,56" fill="#f43f5e" />
+            <line x1="30" y1="58" x2="10" y2="54" stroke="#fbbf24" stroke-width="2" />
+            <line x1="30" y1="62" x2="12" y2="65" stroke="#fbbf24" stroke-width="2" />
+            <line x1="90" y1="58" x2="110" y2="54" stroke="#fbbf24" stroke-width="2" />
+            <line x1="90" y1="62" x2="108" y2="65" stroke="#fbbf24" stroke-width="2" />
+          </svg>
+        </div>
+
+        <!-- Name & Avatar Customizer Input -->
+        <div class="mt-4 flex flex-col items-center gap-2 bg-stone-900/60 p-3 rounded-2xl border-2 border-stone-800">
+          <label class="font-bangers text-xs sm:text-sm text-amber-200 tracking-wider">YOUR PLAYER NAME & AVATAR</label>
+          <div class="flex items-center gap-2">
+            <select id="user-avatar" class="bg-stone-800 text-white font-bangers text-sm px-2 py-1.5 rounded-xl border border-stone-700 outline-none cursor-pointer">
+              <option value="player">😎 You (Captain)</option>
+              <option value="sharky">🦈 Sharky</option>
+              <option value="bacon_cat">🥓 Bacon Cat</option>
+              <option value="schmoopy">💖 Schmoopy</option>
+              <option value="otho">🎩 Otho</option>
+              <option value="lydia">🎀 Lydia</option>
+            </select>
+            <input id="user-name" type="text" maxlength="15" value="Player 1" placeholder="Enter nickname..." class="bg-stone-800 text-amber-100 font-bangers text-base px-3 py-1.5 rounded-xl border border-stone-700 outline-none w-36 text-center focus:border-amber-400" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Main Menu Comic Action Buttons -->
+      <div class="flex flex-col gap-3.5 w-full max-w-sm sm:max-w-md">
+        
+        <!-- 1. Play with Friends (Host Private Party) -->
+        <button id="btn-host-party" class="comic-btn group flex items-center justify-between p-4 rounded-2xl bg-gradient-to-r from-[#992d19] to-[#7f1d1d] cursor-pointer">
+          <div class="w-12 h-12 rounded-xl bg-[#591616] border-2 border-stone-900 flex items-center justify-center text-2xl shadow-inner">
+            🏰
+          </div>
+          <div class="flex-1 px-4 text-left">
+            <div class="font-bangers text-2xl text-white tracking-wide leading-tight group-hover:text-yellow-300 transition-colors">
+              HOST PRIVATE PARTY
+            </div>
+            <div class="font-bangers text-xs text-amber-200">
+              CREATE ROOM CODE & INVITE FRIENDS
+            </div>
+          </div>
+          <div class="w-10 h-10 rounded-xl bg-lime-500 border-2 border-stone-900 flex items-center justify-center text-stone-900 font-bold group-hover:bg-lime-400">
+            ➔
+          </div>
+        </button>
+
+        <!-- 2. Join Party via Code -->
+        <div class="bg-stone-900/80 p-3 rounded-2xl border-2 border-stone-800 flex items-center gap-2">
+          <input id="input-join-code" type="text" maxlength="8" placeholder="ENTER 6-CHAR CODE (e.g. KTN-789)" class="flex-1 bg-stone-800 text-yellow-300 font-bangers tracking-widest text-center py-2.5 px-3 rounded-xl border border-stone-700 outline-none uppercase text-base focus:border-yellow-400" />
+          <button id="btn-join-party" class="comic-btn px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 font-bangers text-white text-base tracking-wider cursor-pointer hover:from-amber-500">
+            JOIN
+          </button>
+        </div>
+
+        <!-- 3. Play with Strangers (Public Matchmaking) -->
+        <button id="btn-quick-match" class="comic-btn group flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-[#852516] to-[#6b1818] cursor-pointer">
+          <div class="w-12 h-12 rounded-xl bg-[#4a1212] border-2 border-stone-900 flex items-center justify-center text-2xl shadow-inner">
+            🌐
+          </div>
+          <div class="flex-1 px-4 text-left">
+            <div class="font-bangers text-2xl text-white tracking-wide leading-tight group-hover:text-yellow-300 transition-colors">
+              PUBLIC MATCHMAKING
+            </div>
+            <div class="font-bangers text-xs text-amber-200">
+              QUICK MATCH WITH STRANGERS
+            </div>
+          </div>
+          <div class="w-10 h-10 rounded-xl bg-lime-500 border-2 border-stone-900 flex items-center justify-center text-stone-900 font-bold group-hover:bg-lime-400">
+            ➔
+          </div>
+        </button>
+
+        <!-- 4. Practice / Single-Player with Bots -->
+        <button id="btn-practice-bots" class="comic-btn group flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-[#5a1a1a] to-[#451010] cursor-pointer">
+          <div class="w-12 h-12 rounded-xl bg-[#360d0d] border-2 border-stone-900 flex items-center justify-center text-2xl shadow-inner">
+            🤖
+          </div>
+          <div class="flex-1 px-4 text-left">
+            <div class="font-bangers text-2xl text-white tracking-wide leading-tight group-hover:text-yellow-300 transition-colors">
+              PRACTICE (VS 3 BOTS)
+            </div>
+            <div class="font-bangers text-xs text-amber-200">
+              INSTANT MATCH AGAINST AI
+            </div>
+          </div>
+          <div class="w-10 h-10 rounded-xl bg-lime-500 border-2 border-stone-900 flex items-center justify-center text-stone-900 font-bold group-hover:bg-lime-400">
+            ➔
+          </div>
+        </button>
+
+        <!-- Auxiliary: Rules & Sound -->
+        <div class="flex items-center gap-3 pt-1">
+          <button id="btn-menu-rules" class="flex-1 py-2 px-3 rounded-xl bg-stone-900/60 border border-stone-800 text-amber-200 font-bangers text-xs tracking-wider hover:bg-stone-900/90 cursor-pointer">
+            📖 HOW TO PLAY / RULES
+          </button>
+          <button id="btn-menu-sound" class="py-2 px-3 rounded-xl bg-stone-900/60 border border-stone-800 text-amber-200 font-bangers text-xs tracking-wider hover:bg-stone-900/90 cursor-pointer">
+            🔊 SOUND: ON
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ============================================================ -->
+  <!-- 2. SCREEN: PARTY LOBBY                                       -->
+  <!-- ============================================================ -->
+  <div id="screen-lobby" class="w-full h-screen wood-tabletop flex flex-col justify-between p-4 sm:p-6 hidden relative">
+    
+    <!-- Lobby Top Header -->
+    <header class="w-full max-w-4xl mx-auto bg-stone-900/90 border-4 border-amber-600 rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex flex-col sm:flex-row items-center gap-3">
+        <div class="flex items-center gap-2">
+          <span class="font-bangers text-sm text-stone-400">ROOM CODE:</span>
+          <span id="lobby-code-badge" class="font-bangers text-2xl sm:text-3xl text-yellow-400 bg-black/60 px-3 py-1 rounded-xl border-2 border-amber-500 tracking-widest">
+            KTN-789
+          </span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btn-copy-code" class="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-200 font-bangers text-xs border border-stone-700 cursor-pointer">
+            📋 COPY CODE
+          </button>
+          <button id="btn-copy-link" class="px-2.5 py-1 rounded-lg bg-amber-700 hover:bg-amber-600 text-white font-bangers text-xs border border-stone-900 cursor-pointer">
+            🔗 COPY INVITE LINK
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <span id="lobby-privacy-tag" class="px-3 py-1 rounded-full font-bangers text-xs tracking-wider bg-red-950 text-red-300 border border-red-800">
+          🔒 PRIVATE PARTY
+        </span>
+        <span id="lobby-slots-count" class="px-3 py-1 rounded-full font-bangers text-xs tracking-wider bg-stone-800 text-amber-200 border border-stone-700">
+          PLAYERS: 1 / 5
+        </span>
+      </div>
+    </header>
+
+    <!-- Center: Party Members Pedestals Grid -->
+    <main class="w-full max-w-4xl mx-auto flex-1 flex flex-col items-center justify-center my-4">
+      <div class="text-center mb-3">
+        <h2 class="font-bangers text-2xl sm:text-3xl text-yellow-400 tracking-wide drop-shadow">PARTY SQUAD</h2>
+        <p class="font-bangers text-xs sm:text-sm text-amber-200/80">Need at least 2 players to start. Host can backfill with AI bots!</p>
+      </div>
+
+      <div id="lobby-members-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 w-full">
+        <!-- Dynamic Player Cards rendered via JS -->
+      </div>
+    </main>
+
+    <!-- Bottom: Lobby Controls -->
+    <footer class="w-full max-w-4xl mx-auto bg-stone-900/90 border-3 border-stone-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <button id="btn-leave-lobby" class="comic-btn w-full sm:w-auto px-5 py-2.5 rounded-xl bg-stone-800 font-bangers text-stone-300 text-sm hover:text-white cursor-pointer">
+        ✕ LEAVE PARTY
+      </button>
+
+      <div class="flex items-center gap-3 w-full sm:w-auto">
+        <button id="btn-toggle-ready" class="comic-btn flex-1 sm:flex-initial px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 font-bangers text-white text-base tracking-wider cursor-pointer">
+          READY UP
+        </button>
+
+        <button id="btn-start-game" class="comic-btn flex-1 sm:flex-initial px-8 py-2.5 rounded-xl bg-lime-500 hover:bg-lime-400 font-bangers text-stone-950 text-lg tracking-wider cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+          START MATCH! ➔
+        </button>
+      </div>
+    </footer>
+  </div>
+
+
+  <!-- ============================================================ -->
+  <!-- 3. SCREEN: GAME TABLE                                        -->
+  <!-- ============================================================ -->
+  <div id="screen-game" class="w-full h-screen wood-tabletop flex flex-col justify-between overflow-hidden hidden relative">
+    
+    <!-- Flash effect for explosion -->
+    <div id="explosion-flash" class="fixed inset-0 z-50 bg-red-600/80 flex items-center justify-center pointer-events-none hidden">
+      <span class="font-bangers text-8xl sm:text-9xl text-yellow-300 drop-shadow-[0_8px_0_#000] rotate-[-8deg] animate-ping">
+        BOOM!
+      </span>
+    </div>
+
+    <!-- Top Bar: Game status, Opponents, and Menu -->
+    <header class="w-full px-3 py-1.5 bg-black/60 backdrop-blur-md border-b border-black/40 z-30 flex items-center justify-between">
+      <div class="flex items-center gap-1.5 sm:gap-2">
+        <button id="btn-leave-game" class="px-2.5 py-1 rounded-xl bg-red-950 hover:bg-red-900 border-2 border-stone-900 font-bangers text-red-200 text-xs tracking-wider cursor-pointer transition-colors" title="Leave Current Game">
+          ✕ LEAVE
+        </button>
+        <button id="btn-game-menu" class="px-2.5 py-1 rounded-xl bg-[#4a2414] hover:bg-[#61301b] border-2 border-stone-900 font-bangers text-amber-200 text-xs tracking-wider cursor-pointer transition-colors">
+          RULES
+        </button>
+        <span id="game-room-tag" class="hidden sm:inline-block font-bangers text-xs text-stone-400">
+          ROOM: -
+        </span>
+      </div>
+
+      <!-- Live Opponents Row across top -->
+      <div id="game-opponents-row" class="flex items-center justify-center gap-2 sm:gap-4 overflow-x-auto px-2 max-w-[60%]">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Right Audio & Settings Bar -->
+      <div class="flex items-center gap-1.5 sm:gap-2">
+        <button id="btn-toggle-bgm" title="Toggle Background Music" class="px-2 py-1 rounded-xl bg-[#4a2414] hover:bg-[#61301b] border-2 border-stone-900 text-amber-200 text-xs flex items-center gap-1 cursor-pointer">
+          <span id="bgm-icon">🎵</span>
+          <span class="hidden md:inline font-bangers text-[11px]">BGM</span>
+        </button>
+        <button id="btn-game-sound" title="Toggle Sound FX" class="w-8 h-8 rounded-full bg-[#4a2414] hover:bg-[#61301b] border-2 border-stone-900 text-amber-200 text-xs flex items-center justify-center cursor-pointer">
+          🔊
+        </button>
+        <button id="btn-audio-settings" title="Audio & Music Settings" class="w-8 h-8 rounded-full bg-[#4a2414] hover:bg-[#61301b] border-2 border-stone-900 text-amber-200 text-xs flex items-center justify-center cursor-pointer">
+          ⚙️
+        </button>
+      </div>
+    </header>
+
+    <!-- Center Play Area: Speedometer Gauge, Deck, Discard, Parchment Log -->
+    <main class="flex-1 w-full max-w-7xl mx-auto px-3 py-2 flex flex-col md:flex-row items-center justify-between gap-4 relative z-10">
+      
+      <!-- Left: Speedometer Chance-of-Kitten Gauge -->
+      <div class="flex flex-col items-center">
+        <div id="gauge-container" class="relative w-36 h-24 sm:w-44 sm:h-28 bg-[#201008] border-4 border-amber-600 rounded-t-full p-2 flex flex-col items-center justify-end shadow-2xl transition-transform hover:scale-105 cursor-pointer" title="Click for Danger Breakdown">
+          <!-- Dial Arch -->
+          <svg class="w-full h-full" viewBox="0 0 100 60">
+            <!-- Green zone (0 - 15%) -->
+            <path d="M 12 50 A 38 38 0 0 1 30 20" fill="none" stroke="#22c55e" stroke-width="8" stroke-linecap="round" />
+            <!-- Orange zone (16 - 35%) -->
+            <path d="M 33 18 A 38 38 0 0 1 67 18" fill="none" stroke="#f97316" stroke-width="8" />
+            <!-- Red zone (36 - 100%) -->
+            <path d="M 70 20 A 38 38 0 0 1 88 50" fill="none" stroke="#ef4444" stroke-width="8" stroke-linecap="round" />
+            
+            <!-- Gauge Needle -->
+            <g id="gauge-needle" class="transition-transform duration-500 origin-bottom" style="transform: rotate(-45deg); transform-origin: 50px 50px;">
+              <polygon points="50,14 47,50 53,50" fill="#ef4444" stroke="#000" stroke-width="1" />
+              <circle cx="50" cy="50" r="4" fill="#fbbf24" stroke="#000" stroke-width="1.5" />
+            </g>
+          </svg>
+
+          <!-- Digital readout pill -->
+          <div class="absolute -bottom-2 bg-stone-900 border-2 border-stone-950 px-2 py-0.5 rounded-full font-bangers text-xs sm:text-sm text-yellow-300 shadow">
+            <span id="gauge-percentage-text">0%</span> DANGER
+          </div>
+        </div>
+        <span class="font-bangers text-[10px] text-amber-200/80 tracking-wider mt-3">CHANCE OF KITTEN</span>
+      </div>
+
+      <!-- Middle: Draw Deck & Discard Pile -->
+      <div class="flex items-center gap-6 sm:gap-10">
+        <!-- Draw Pile (Clickable to Draw Card on your turn) -->
+        <div id="deck-container" class="flex flex-col items-center cursor-pointer group select-none">
+          <div id="deck-card" class="relative w-28 h-40 sm:w-36 sm:h-52 rounded-2xl bg-gradient-to-br from-[#801818] to-[#450a0a] border-4 border-stone-950 shadow-[0_10px_0_#1c0f08] flex flex-col items-center justify-center p-3 text-center transition-all group-hover:scale-103 group-hover:-translate-y-1">
+            <!-- Decorative Deck Stack lines -->
+            <div class="absolute -top-1.5 -left-1.5 w-full h-full rounded-2xl border-2 border-stone-900/60 pointer-events-none -z-10 bg-[#591212]"></div>
+            <div class="absolute -top-3 -left-3 w-full h-full rounded-2xl border-2 border-stone-900/40 pointer-events-none -z-20 bg-[#3d0c0c]"></div>
+
+            <!-- Kitten silhouette badge -->
+            <div class="w-16 h-16 sm:w-20 sm:h-20 text-yellow-400 fill-current drop-shadow animate-pulse">
+              <svg viewBox="0 0 100 100" class="w-full h-full">
+                <path d="M20,70 Q15,40 25,25 Q35,35 45,30 Q55,30 65,25 Q75,40 70,70 Q45,85 20,70 Z" />
+                <polygon points="25,32 15,10 40,25" />
+                <polygon points="65,25 90,10 80,32" />
+                <circle cx="38" cy="48" r="4" fill="#000" />
+                <circle cx="62" cy="48" r="4" fill="#000" />
+              </svg>
+            </div>
+
+            <div class="font-bangers text-white text-base sm:text-xl tracking-wider mt-2">
+              DRAW DECK
+            </div>
+            <div id="deck-count-badge" class="font-bangers text-yellow-300 text-xs sm:text-sm">
+              34 CARDS LEFT
+            </div>
+
+            <!-- Pulse Draw Badge when it's your turn -->
+            <div id="draw-pulse-badge" class="absolute -bottom-3 bg-lime-500 border-2 border-stone-950 text-stone-950 font-bangers text-xs px-2.5 py-0.5 rounded-full shadow-lg animate-bounce hidden">
+              CLICK TO DRAW!
+            </div>
+          </div>
+        </div>
+
+        <!-- Discard Pile (Clickable to view Discard Graveyard) -->
+        <div id="discard-container" class="flex flex-col items-center cursor-pointer group" title="Click to view Graveyard">
+          <div id="discard-card-slot" class="w-28 h-40 sm:w-36 sm:h-52 rounded-2xl bg-black/40 border-3 border-dashed border-stone-700 flex flex-col items-center justify-center p-2 text-center relative rotate-2 transition-transform group-hover:scale-103 group-hover:rotate-0">
+            <span class="font-bangers text-stone-500 text-sm">DISCARD PILE</span>
+          </div>
+          <span class="font-bangers text-[10px] text-amber-200/80 tracking-wider mt-2 flex items-center gap-1">
+            <span>LAST PLAYED</span>
+            <span class="text-amber-400 text-[9px]">(CLICK GRAVEYARD)</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Right: Enhanced Table Chronicles & Quick Emotes (Desktop view) -->
+      <div id="table-chronicles-widget" class="hidden md:flex flex-col items-end gap-2 w-80 shrink-0">
+        <!-- Parchment Log Component with Live Feed & Round History Tabs -->
+        <div class="w-full parchment rounded-2xl border-3 border-amber-900 p-2.5 shadow-xl flex flex-col h-56 sm:h-60 overflow-hidden">
+          
+          <!-- Chronicles Header -->
+          <div class="flex items-center justify-between border-b border-amber-900/30 pb-1 mb-1.5">
+            <div class="flex items-center gap-1.5">
+              <span class="font-bangers text-xs sm:text-sm text-amber-950 tracking-wider">📜 TABLE CHRONICLES</span>
+              <span id="current-round-badge" class="font-bangers text-[10px] text-amber-900 bg-amber-200/90 px-1.5 py-0.5 rounded-full border border-amber-800/40">ROUND 1</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span id="turns-stacked-tag" class="font-bangers text-[11px] text-red-700 bg-red-200/80 px-1.5 rounded">1 TURN</span>
+              <button id="btn-expand-chronicles" title="View Full Archives" class="text-xs hover:scale-110 cursor-pointer text-amber-950 px-1 font-bold">⛶</button>
+            </div>
+          </div>
+
+          <!-- Chronicles Tab Switcher -->
+          <div class="flex items-center gap-1 mb-1.5 bg-amber-900/10 p-0.5 rounded-lg border border-amber-900/20">
+            <button id="tab-btn-live" class="flex-1 py-1 rounded-md font-bangers text-xs tracking-wider transition-all bg-amber-900 text-amber-100 shadow cursor-pointer">
+              ⚡ LIVE FEED
+            </button>
+            <button id="tab-btn-rounds" class="flex-1 py-1 rounded-md font-bangers text-xs tracking-wider transition-all text-amber-950 hover:bg-amber-800/20 cursor-pointer">
+              📋 ROUND HISTORY
+            </button>
+          </div>
+
+          <!-- Tab Content 1: Live Activity Feed -->
+          <div id="chronicles-live-view" class="flex-1 flex flex-col overflow-hidden">
+            <div id="action-log-list" class="flex-1 overflow-y-auto space-y-1.5 pr-1 font-fredoka text-xs text-amber-950">
+              <div class="p-1 rounded bg-amber-100/50">Match started. Good luck!</div>
+            </div>
+          </div>
+
+          <!-- Tab Content 2: Round-by-Round History -->
+          <div id="chronicles-rounds-view" class="flex-1 flex flex-col overflow-hidden hidden">
+            <!-- Round Pills Selector -->
+            <div id="round-pills-selector" class="flex items-center gap-1 overflow-x-auto pb-1 mb-1 font-bangers text-[10px] text-amber-950">
+              <!-- Dynamically populated e.g. [Round 1] [Round 2] -->
+            </div>
+            <!-- Plays within selected round -->
+            <div id="round-plays-list" class="flex-1 overflow-y-auto space-y-1.5 pr-1 font-fredoka text-xs text-amber-950">
+              <!-- Rendered per round -->
+            </div>
+          </div>
+        </div>
+
+        <!-- In-Game Comic Emote Reactions -->
+        <div class="flex items-center gap-1 bg-black/60 p-1.5 rounded-xl border border-stone-800 backdrop-blur-xs shadow-md">
+          <button class="btn-emote text-base hover:scale-130 transition-transform cursor-pointer" data-emote="😼 Meow!">😼</button>
+          <button class="btn-emote text-base hover:scale-130 transition-transform cursor-pointer" data-emote="💣 Explode!">💣</button>
+          <button class="btn-emote text-base hover:scale-130 transition-transform cursor-pointer" data-emote="🛡️ Defused!">🛡️</button>
+          <button class="btn-emote text-base hover:scale-130 transition-transform cursor-pointer" data-emote="😱 Panic!">😱</button>
+          <button class="btn-emote text-base hover:scale-130 transition-transform cursor-pointer" data-emote="👀 I See You!">👀</button>
+          <button class="btn-emote text-base hover:scale-130 transition-transform cursor-pointer" data-emote="🌯 Taco Time!">🌯</button>
+          <button class="btn-emote text-base hover:scale-130 transition-transform cursor-pointer" data-emote="🔥 GG!">🔥</button>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Mobile Floating Chronicles Toggle Pill (visible on small screens) -->
+    <button id="btn-mobile-chronicles" class="md:hidden fixed bottom-28 right-3 z-40 comic-btn px-3 py-1.5 rounded-full bg-amber-600 text-stone-950 font-bangers text-xs shadow-2xl flex items-center gap-1.5 cursor-pointer">
+      <span>📜</span>
+      <span>CHRONICLES</span>
+      <span id="mobile-unread-count" class="bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
+    </button>
+
+    <!-- Bottom Player Area: Hand, Avatar, Controls -->
+    <footer class="w-full bg-gradient-to-t from-black via-black/80 to-transparent pt-3 pb-2 px-4 z-30 select-none">
+      <div class="max-w-7xl mx-auto flex flex-col gap-2">
+        
+        <!-- Controls row: Status, Auto-Sort, Selection, Play Button -->
+        <div class="flex flex-wrap items-center justify-between gap-2 px-2">
+          <div class="flex items-center gap-2">
+            <div id="player-status-badge" class="font-bangers text-base sm:text-lg text-yellow-300 flex items-center gap-2 bg-stone-900/80 px-3 py-1 rounded-xl border border-stone-800">
+              <span>WAITING FOR OPPONENT...</span>
+            </div>
+
+            <!-- Hand Sorting Controls -->
+            <div class="flex items-center gap-1.5 bg-stone-900/90 px-2.5 py-1 rounded-xl border border-stone-800 text-xs font-fredoka">
+              <button id="btn-toggle-autosort" title="Toggle Automatic Hand Sorting" class="comic-btn px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-yellow-300 flex items-center gap-1.5 text-xs">
+                <span>⚡ Auto-Sort:</span>
+                <span id="autosort-status-badge" class="text-lime-400 font-bold">ON</span>
+              </button>
+              <button id="btn-manual-sort" title="Sort Hand Now" class="comic-btn px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white text-xs">
+                ↕ Sort
+              </button>
+            </div>
+          </div>
+
+          <!-- Action & Play Controls -->
+          <div class="flex items-center gap-2">
+            <button id="btn-clear-selection" class="comic-btn px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 font-bangers text-stone-300 text-xs tracking-wider cursor-pointer hidden">
+              CLEAR (0)
+            </button>
+            <button id="btn-play-card" class="comic-btn px-6 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 font-bangers text-stone-950 text-base tracking-wider cursor-pointer shadow-lg disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+              PLAY CARD
+            </button>
+          </div>
+        </div>
+
+        <!-- Combo Feedback Banner -->
+        <div id="combo-status-bar" class="hidden mx-2 px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-fredoka text-xs flex items-center justify-between animate-fade-in">
+          <span id="combo-status-text" class="font-medium">Multi-card combo detected</span>
+          <span id="combo-hint-text" class="text-[11px] text-amber-200/70">Ready to play</span>
+        </div>
+
+        <!-- Horizontal Fanned Cards Tray -->
+        <div id="player-hand-container" class="w-full flex items-end justify-center overflow-x-auto pb-2 pt-6 min-h-[160px] gap-[-20px]">
+          <!-- Rendered dynamically -->
+        </div>
+
+      </div>
+    </footer>
+
+  </div>
+
+
+  <!-- ============================================================ -->
+  <!-- MODALS OVERLAYS                                              -->
+  <!-- ============================================================ -->
+
+  <!-- 0. LEAVE GAME CONFIRMATION MODAL -->
+  <div id="modal-leave-confirm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#24130b] border-4 border-red-600 rounded-3xl max-w-sm w-full p-5 text-center shadow-2xl animate-pop">
+      <div class="text-4xl mb-2">🚪</div>
+      <h2 class="font-bangers text-2xl text-red-400 mb-1">LEAVE GAME?</h2>
+      <p class="font-fredoka text-xs text-stone-300 mb-4">Are you sure you want to forfeit this match and return to the main menu?</p>
+      <div class="flex items-center justify-center gap-3">
+        <button id="btn-confirm-leave" class="comic-btn px-4 py-2 rounded-xl bg-red-700 hover:bg-red-600 font-bangers text-white text-sm cursor-pointer">
+          YES, LEAVE
+        </button>
+        <button id="btn-cancel-leave" class="comic-btn px-4 py-2 rounded-xl bg-stone-700 hover:bg-stone-600 font-bangers text-stone-200 text-sm cursor-pointer">
+          STAY & PLAY
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1. DEFUSE PLACEMENT MODAL -->
+  <div id="modal-defuse" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#24130b] border-4 border-green-500 rounded-3xl max-w-md w-full p-6 text-center shadow-2xl animate-pop">
+      <div class="w-16 h-16 mx-auto mb-2 text-green-400">
+        <svg viewBox="0 0 24 24" fill="currentColor" class="w-full h-full">
+          <path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10h2v4h-2zm0 6h2v2h-2z"/>
+        </svg>
+      </div>
+      <h2 class="font-bangers text-3xl text-green-400 mb-1">YOU DEFUSED THE KITTEN!</h2>
+      <p class="font-fredoka text-sm text-stone-300 mb-5">
+        Secretly choose where to tuck the Exploding Kitten back into the Draw Deck:
+      </p>
+
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <button class="btn-place-kitten comic-btn py-3 rounded-xl bg-red-800 hover:bg-red-700 font-bangers text-white text-sm" data-pos="top">
+          TOP OF DECK<br><span class="text-[10px] text-yellow-300">TRAP NEXT!</span>
+        </button>
+        <button class="btn-place-kitten comic-btn py-3 rounded-xl bg-amber-800 hover:bg-amber-700 font-bangers text-white text-sm" data-pos="random">
+          RANDOM<br><span class="text-[10px] text-yellow-300">SHUFFLED IN</span>
+        </button>
+        <button class="btn-place-kitten comic-btn py-3 rounded-xl bg-stone-800 hover:bg-stone-700 font-bangers text-white text-sm" data-pos="bottom">
+          BOTTOM<br><span class="text-[10px] text-yellow-300">SAFE FOR NOW</span>
+        </button>
+      </div>
+
+      <!-- Slider for exact depth -->
+      <div class="bg-black/40 p-3 rounded-xl border border-stone-800 flex flex-col gap-2">
+        <label class="font-bangers text-xs text-amber-200">OR CHOOSE EXACT DEPTH:</label>
+        <div class="flex items-center gap-3">
+          <span class="font-bangers text-xs text-stone-400">#1</span>
+          <input id="slider-kitten-depth" type="range" min="0" max="30" value="0" class="flex-1 accent-amber-500 cursor-pointer" />
+          <span id="slider-depth-val" class="font-bangers text-xs text-yellow-400">#1 (TOP)</span>
+        </div>
+        <button id="btn-place-slider" class="comic-btn py-1.5 rounded-lg bg-green-600 hover:bg-green-500 font-bangers text-white text-xs mt-1">
+          INSERT AT POSITION
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. SEE THE FUTURE MODAL -->
+  <div id="modal-see-future" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#24130b] border-4 border-purple-500 rounded-3xl max-w-lg w-full p-6 text-center shadow-2xl animate-pop">
+      <h2 class="font-bangers text-3xl text-purple-400 mb-1">SEE THE FUTURE (3X)</h2>
+      <p class="font-fredoka text-sm text-stone-300 mb-4">Here are the top 3 cards from the Draw Pile (top card on left):</p>
+      <div id="see-future-cards-grid" class="flex items-center justify-center gap-3 mb-6">
+        <!-- Dynamic Cards -->
+      </div>
+      <button id="btn-close-see-future" class="comic-btn px-8 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 font-bangers text-white text-base">
+        GOT IT!
+      </button>
+    </div>
+  </div>
+
+  <!-- 3. ALTER THE FUTURE MODAL -->
+  <div id="modal-alter-future" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#24130b] border-4 border-fuchsia-500 rounded-3xl max-w-lg w-full p-6 text-center shadow-2xl animate-pop">
+      <h2 class="font-bangers text-3xl text-fuchsia-400 mb-1">ALTER THE FUTURE</h2>
+      <p class="font-fredoka text-sm text-stone-300 mb-4">Click Swap arrows to rearrange the top cards before returning them to the deck:</p>
+      <div id="alter-future-cards-grid" class="flex items-center justify-center gap-3 mb-6">
+        <!-- Reorderable cards -->
+      </div>
+      <button id="btn-confirm-alter-future" class="comic-btn px-8 py-2 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 font-bangers text-white text-base">
+        SAVE TIMELINE ORDER
+      </button>
+    </div>
+  </div>
+
+  <!-- 4. TARGET SELECT MODAL (Favor / Cat Pairs) -->
+  <div id="modal-target-select" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#24130b] border-4 border-cyan-500 rounded-3xl max-w-md w-full p-6 text-center shadow-2xl animate-pop">
+      <h2 id="target-modal-title" class="font-bangers text-3xl text-cyan-400 mb-1">SELECT A VICTIM</h2>
+      <p id="target-modal-desc" class="font-fredoka text-sm text-stone-300 mb-5">Choose a player to steal from:</p>
+      <div id="target-players-grid" class="grid grid-cols-2 gap-3 mb-4">
+        <!-- Dynamic targets -->
+      </div>
+      <button id="btn-cancel-target" class="comic-btn px-6 py-1.5 rounded-xl bg-stone-800 font-bangers text-stone-300 text-sm">
+        CANCEL
+      </button>
+    </div>
+  </div>
+
+  <!-- 5. FAVOR SURRENDER MODAL (When Opponent demands Favor from You) -->
+  <div id="modal-favor-give" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#24130b] border-4 border-amber-500 rounded-3xl max-w-lg w-full p-6 text-center shadow-2xl animate-pop">
+      <h2 class="font-bangers text-3xl text-amber-400 mb-1">FAVOR DEMANDED!</h2>
+      <p id="favor-give-desc" class="font-fredoka text-sm text-stone-300 mb-4">An opponent played a Favor card. Choose 1 card from your hand to surrender:</p>
+      <div id="favor-give-hand-grid" class="flex flex-wrap items-center justify-center gap-2 mb-4 max-h-60 overflow-y-auto p-2">
+        <!-- Hand cards -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 5b. 3-OF-A-KIND TARGETED DEMAND MODAL -->
+  <div id="modal-demand-card" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#24130b] border-4 border-fuchsia-500 rounded-3xl max-w-xl w-full p-6 text-center shadow-2xl animate-pop">
+      <div class="text-4xl mb-1">🎯</div>
+      <h2 class="font-bangers text-3xl text-fuchsia-400 mb-1">3-OF-A-KIND: DEMAND A CARD</h2>
+      <p class="font-fredoka text-xs sm:text-sm text-stone-300 mb-4">
+        Demanding from: <span id="demand-target-player-name" class="text-yellow-300 font-bold underline">Opponent</span>.<br/>
+        If they possess this card type, they must surrender it to you!
+      </p>
+
+      <div id="demand-card-options-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-5 max-h-72 overflow-y-auto p-1 text-left">
+        <!-- Generated dynamically in JS -->
+      </div>
+
+      <button id="btn-cancel-demand" class="comic-btn px-6 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 font-bangers text-stone-300 text-sm">
+        CANCEL COMBO
+      </button>
+    </div>
+  </div>
+
+  <!-- 5c. 5-CARD COMBO DISCARD PILE RECOVERY MODAL -->
+  <div id="modal-discard-browser" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#24130b] border-4 border-emerald-500 rounded-3xl max-w-2xl w-full p-6 text-center shadow-2xl animate-pop">
+      <div class="text-4xl mb-1">✨</div>
+      <h2 class="font-bangers text-3xl text-emerald-400 mb-1">5-CARD COMBO: DISCARD RECOVERY</h2>
+      <p class="font-fredoka text-xs sm:text-sm text-stone-300 mb-4">
+        You played 5 unique cards! Click any card from the Discard Pile to take it into your hand:
+      </p>
+
+      <div id="discard-browser-grid" class="flex flex-wrap items-center justify-center gap-3 mb-5 max-h-72 overflow-y-auto p-3 bg-black/40 rounded-2xl border border-stone-800">
+        <!-- Discard pile cards rendered here -->
+      </div>
+
+      <p id="discard-empty-msg" class="hidden text-stone-400 font-fredoka text-sm italic mb-4">
+        No eligible cards available in the discard pile.
+      </p>
+    </div>
+  </div>
+
+  <!-- 5d. COMBO NOTIFICATION BANNER -->
+  <div id="combo-alert-toast" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 opacity-0 -translate-y-4 max-w-md w-[92%]">
+    <div id="combo-alert-box" class="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white border-3 border-yellow-300 rounded-2xl p-3 shadow-2xl flex items-center gap-3">
+      <div id="combo-alert-icon" class="text-2xl">✨</div>
+      <div class="flex-1">
+        <div id="combo-alert-title" class="font-bangers text-base text-yellow-200 tracking-wider">COMBO EXECUTED!</div>
+        <div id="combo-alert-desc" class="font-fredoka text-xs text-stone-100">Player stole a card</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. GAME OVER MODAL -->
+  <div id="modal-game-over" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 hidden">
+    <div class="bg-[#2b170c] border-4 border-yellow-500 rounded-3xl max-w-md w-full p-6 text-center shadow-2xl animate-pop">
+      <div id="game-over-icon" class="text-6xl mb-2">👑</div>
+      <h2 id="game-over-title" class="font-bangers text-4xl text-yellow-400 mb-1">VICTORY!</h2>
+      <p id="game-over-subtitle" class="font-fredoka text-sm text-stone-300 mb-4">You survived the feline apocalypse!</p>
+
+      <div class="bg-black/50 p-4 rounded-2xl border border-stone-800 mb-5 font-fredoka text-xs text-left space-y-1.5">
+        <div class="flex justify-between text-amber-200"><span>Turns Taken:</span><b id="stat-turns">12</b></div>
+        <div class="flex justify-between text-amber-200"><span>Kittens Defused:</span><b id="stat-defused">2</b></div>
+        <div class="flex justify-between text-amber-200"><span>Attacks Deployed:</span><b id="stat-attacks">4</b></div>
+        <div class="flex justify-between text-amber-200"><span>Cards Stolen:</span><b id="stat-stolen">3</b></div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="btn-return-lobby" class="comic-btn flex-1 py-2.5 rounded-xl bg-stone-800 font-bangers text-amber-200 text-sm">
+          RETURN TO LOBBY
+        </button>
+        <button id="btn-game-over-menu" class="comic-btn flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 font-bangers text-white text-sm">
+          MAIN MENU
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. TUTORIAL / RULES MODAL -->
+  <div id="modal-tutorial" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#2b170c] border-4 border-amber-600 rounded-3xl max-w-xl w-full p-6 shadow-2xl animate-pop max-h-[85vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-amber-800/40 pb-2 mb-3">
+        <h2 class="font-bangers text-3xl text-yellow-400">HOW TO PLAY (RULES)</h2>
+        <button id="btn-close-tutorial" class="text-stone-400 hover:text-white font-bangers text-2xl">✕</button>
+      </div>
+      <div class="flex-1 overflow-y-auto space-y-3 font-fredoka text-xs sm:text-sm text-stone-200 pr-2">
+        <p><b class="text-red-400 font-bangers text-base">EXPLODING KITTENS:</b> If you draw an Exploding Kitten, you must play a Defuse card immediately. If you have none, you explode and lose the game!</p>
+        <p><b class="text-green-400 font-bangers text-base">DEFUSE:</b> Cancels an explosion! You get to secretly insert the Exploding Kitten anywhere you want back into the Draw Deck.</p>
+        <p><b class="text-orange-400 font-bangers text-base">ATTACK / SLAP:</b> End your turn without drawing a card, and force the next victim to take 2 turns in a row.</p>
+        <p><b class="text-blue-400 font-bangers text-base">SKIP:</b> Immediately end your turn without drawing a card.</p>
+        <p><b class="text-purple-400 font-bangers text-base">SEE THE FUTURE (3X):</b> Privately peek at the top 3 cards of the Draw Pile.</p>
+        <p><b class="text-fuchsia-400 font-bangers text-base">ALTER THE FUTURE:</b> Peek at the top 3 cards and rearrange their order!</p>
+        <p><b class="text-cyan-400 font-bangers text-base">FAVOR:</b> Force any other player to give you 1 card of their choice.</p>
+        <p><b class="text-yellow-400 font-bangers text-base">2-OF-A-KIND (PAIRS):</b> Play two identical matching cards to steal 1 random card from any opponent!</p>
+        <p><b class="text-fuchsia-400 font-bangers text-base">3-OF-A-KIND (TRIO):</b> Play three identical matching cards to name an opponent and demand a specific card (e.g. Defuse)! If they have it, they must surrender it.</p>
+        <p><b class="text-emerald-400 font-bangers text-base">5-DIFFERENT CARDS:</b> Play five completely different cards to scavenge the Discard Pile and claim any card of your choice!</p>
+        <p><b class="text-amber-300 font-bangers text-base">AUTO-SORT:</b> Toggle automatic inventory sorting anytime using the Auto-Sort button on the bottom bar.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. DISCARD PILE GRAVEYARD MODAL -->
+  <div id="modal-discard-graveyard" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#24130b] border-4 border-amber-700 rounded-3xl max-w-xl w-full p-5 text-center shadow-2xl animate-pop max-h-[85vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-amber-900/40 pb-2 mb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">🪦</span>
+          <h2 class="font-bangers text-2xl sm:text-3xl text-yellow-400">DISCARD PILE GRAVEYARD</h2>
+        </div>
+        <button id="btn-close-graveyard" class="text-stone-400 hover:text-white font-bangers text-2xl cursor-pointer">✕</button>
+      </div>
+      <div id="graveyard-stats" class="flex flex-wrap items-center justify-center gap-2 mb-3 font-bangers text-xs text-amber-200">
+        <!-- Rendered dynamically -->
+      </div>
+      <div id="graveyard-cards-list" class="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 pr-1 p-1">
+        <!-- Rendered discarded cards -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. AUDIO & MUSIC SETTINGS MODAL -->
+  <div id="modal-audio-settings" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 hidden">
+    <div class="bg-[#24130b] border-4 border-amber-600 rounded-3xl max-w-md w-full p-6 shadow-2xl animate-pop text-left">
+      <div class="flex items-center justify-between border-b border-amber-800/40 pb-2 mb-4">
+        <h2 class="font-bangers text-2xl text-yellow-400 flex items-center gap-2">
+          <span>🎧</span>
+          <span>AUDIO & MUSIC SETTINGS</span>
+        </h2>
+        <button id="btn-close-audio-settings" class="text-stone-400 hover:text-white font-bangers text-2xl cursor-pointer">✕</button>
+      </div>
+
+      <div class="space-y-4 font-fredoka text-sm text-stone-200">
+        <!-- BGM Volume -->
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="font-bangers text-amber-300">🎵 BACKGROUND MUSIC</label>
+            <span id="val-bgm-volume" class="font-bangers text-yellow-400 text-xs">60%</span>
+          </div>
+          <input id="slider-bgm-volume" type="range" min="0" max="100" value="60" class="w-full accent-amber-500 cursor-pointer" />
+        </div>
+
+        <!-- SFX Volume -->
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="font-bangers text-amber-300">🔊 SOUND EFFECTS</label>
+            <span id="val-sfx-volume" class="font-bangers text-yellow-400 text-xs">80%</span>
+          </div>
+          <input id="slider-sfx-volume" type="range" min="0" max="100" value="80" class="w-full accent-amber-500 cursor-pointer" />
+        </div>
+
+        <!-- Track Selection -->
+        <div>
+          <label class="font-bangers text-amber-300 block mb-1.5">🎼 SOUNDTRACK VIBE</label>
+          <div class="space-y-2">
+            <button class="btn-track-pick comic-btn w-full p-2.5 rounded-xl text-left bg-stone-900 border border-stone-700 hover:border-amber-500 flex items-center justify-between cursor-pointer" data-track="sneaky">
+              <div>
+                <div class="font-bangers text-amber-300 text-sm">🎷 Sneaky Kitten Lounge</div>
+                <div class="text-[11px] text-stone-400 font-fredoka">Cool jazz walking bass & playful marimba</div>
+              </div>
+              <span class="track-tag-sneaky text-xs font-bangers text-lime-400">ACTIVE</span>
+            </button>
+            <button class="btn-track-pick comic-btn w-full p-2.5 rounded-xl text-left bg-stone-900 border border-stone-700 hover:border-amber-500 flex items-center justify-between cursor-pointer" data-track="panic">
+              <div>
+                <div class="font-bangers text-amber-300 text-sm">🚨 Panic Defuse Countdown</div>
+                <div class="text-[11px] text-stone-400 font-fredoka">Tense pulsing bassline & energetic arpeggios</div>
+              </div>
+              <span class="track-tag-panic text-xs font-bangers text-stone-500">PLAY</span>
+            </button>
+            <button class="btn-track-pick comic-btn w-full p-2.5 rounded-xl text-left bg-stone-900 border border-stone-700 hover:border-amber-500 flex items-center justify-between cursor-pointer" data-track="fiesta">
+              <div>
+                <div class="font-bangers text-amber-300 text-sm">🌮 Tacocat Carnival Fiesta</div>
+                <div class="text-[11px] text-stone-400 font-fredoka">Upbeat Latin feline carnival rhythm</div>
+              </div>
+              <span class="track-tag-fiesta text-xs font-bangers text-stone-500">PLAY</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10. EXPANDED TABLE CHRONICLES & ROUND ARCHIVES MODAL -->
+  <div id="modal-expanded-chronicles" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 hidden">
+    <div class="parchment border-4 border-amber-900 rounded-3xl max-w-3xl w-full p-6 shadow-2xl animate-pop max-h-[90vh] flex flex-col text-amber-950">
+      <div class="flex items-center justify-between border-b border-amber-900/40 pb-2 mb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">📜</span>
+          <h2 class="font-bangers text-2xl sm:text-3xl text-amber-950">COMPLETE TABLE CHRONICLES & ROUND ARCHIVES</h2>
+        </div>
+        <button id="btn-close-expanded-chronicles" class="text-amber-900 hover:text-black font-bangers text-2xl cursor-pointer">✕</button>
+      </div>
+
+      <!-- Modal Tabs -->
+      <div class="flex items-center gap-2 mb-3">
+        <button id="modal-tab-live" class="px-4 py-1.5 rounded-xl font-bangers text-sm bg-amber-900 text-amber-100 cursor-pointer">
+          ⚡ ALL REAL-TIME LOGS
+        </button>
+        <button id="modal-tab-rounds" class="px-4 py-1.5 rounded-xl font-bangers text-sm bg-amber-800/20 text-amber-900 hover:bg-amber-800/30 cursor-pointer">
+          📋 ROUND-BY-ROUND BREAKDOWN
+        </button>
+      </div>
+
+      <div id="modal-chronicles-content" class="flex-1 overflow-y-auto space-y-2 pr-2">
+        <!-- Full chronicles content dynamically rendered -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 11. MOBILE BOTTOM SHEET DRAWER FOR CHRONICLES -->
+  <div id="mobile-chronicles-drawer" class="md:hidden fixed inset-x-0 bottom-0 z-50 bg-[#2b170c] border-t-4 border-amber-700 rounded-t-3xl shadow-2xl p-4 transform translate-y-full transition-transform duration-300 max-h-[75vh] flex flex-col">
+    <div class="flex items-center justify-between border-b border-amber-800/40 pb-2 mb-2">
+      <div class="flex items-center gap-1.5">
+        <span class="font-bangers text-lg text-yellow-300">📜 TABLE CHRONICLES</span>
+        <span id="mobile-drawer-round" class="font-bangers text-xs text-amber-900 bg-amber-200 px-2 py-0.5 rounded-full">R1</span>
+      </div>
+      <button id="btn-close-mobile-drawer" class="text-stone-300 hover:text-white font-bangers text-xl cursor-pointer px-2">✕</button>
+    </div>
+    <div class="flex items-center gap-1 mb-2 bg-black/40 p-1 rounded-xl border border-stone-800">
+      <button id="mobile-tab-live" class="flex-1 py-1 rounded-lg font-bangers text-xs bg-amber-900 text-amber-100 cursor-pointer transition-all">
+        ⚡ LIVE FEED
+      </button>
+      <button id="mobile-tab-rounds" class="flex-1 py-1 rounded-lg font-bangers text-xs text-stone-300 hover:text-white cursor-pointer transition-all">
+        📋 ROUND HISTORY
+      </button>
+    </div>
+    <!-- Round pills for mobile when in rounds view -->
+    <div id="mobile-round-pills-selector" class="flex items-center gap-1 overflow-x-auto pb-1.5 mb-1.5 font-bangers text-[10px] hidden">
+      <!-- Dynamically populated -->
+    </div>
+    <div id="mobile-drawer-content" class="flex-1 overflow-y-auto space-y-1.5 pr-1 font-fredoka text-xs text-stone-200">
+      <!-- Rendered dynamically -->
+    </div>
+    <!-- Mobile Quick Emotes Row -->
+    <div class="flex items-center justify-around gap-1 pt-2 mt-1 border-t border-amber-800/40">
+      <button class="btn-emote text-lg hover:scale-130 transition-transform cursor-pointer" data-emote="😼 Meow!">😼</button>
+      <button class="btn-emote text-lg hover:scale-130 transition-transform cursor-pointer" data-emote="💣 Explode!">💣</button>
+      <button class="btn-emote text-lg hover:scale-130 transition-transform cursor-pointer" data-emote="🛡️ Defused!">🛡️</button>
+      <button class="btn-emote text-lg hover:scale-130 transition-transform cursor-pointer" data-emote="😱 Panic!">😱</button>
+      <button class="btn-emote text-lg hover:scale-130 transition-transform cursor-pointer" data-emote="👀 I See You!">👀</button>
+      <button class="btn-emote text-lg hover:scale-130 transition-transform cursor-pointer" data-emote="🌯 Taco Time!">🌯</button>
+      <button class="btn-emote text-lg hover:scale-130 transition-transform cursor-pointer" data-emote="🔥 GG!">🔥</button>
+    </div>
+  </div>
+
+
+  <!-- ============================================================ -->
+  <!-- CLIENT JAVASCRIPT & SOCKET LOGIC                             -->
+  <!-- ============================================================ -->
+  <script>
+    // --- SYNTHETIC WEB AUDIO ENGINE ---
+    // --- SYNTHETIC WEB AUDIO ENGINE WITH PROCEDURAL BACKGROUND MUSIC ---
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.enabled = true;
+        this.bgmEnabled = true;
+        this.bgmVolume = 0.5;
+        this.sfxVolume = 0.7;
+        this.currentTrack = 'sneaky'; // 'sneaky' | 'panic' | 'fiesta'
+        this.bgmTimer = null;
+        this.step = 0;
+        this.isPlayingBgm = false;
+        this.masterBgmGain = null;
+        this.masterSfxGain = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+          this.masterBgmGain = this.ctx.createGain();
+          this.masterBgmGain.gain.setValueAtTime(this.bgmVolume, this.ctx.currentTime);
+          this.masterBgmGain.connect(this.ctx.destination);
+
+          this.masterSfxGain = this.ctx.createGain();
+          this.masterSfxGain.gain.setValueAtTime(this.sfxVolume, this.ctx.currentTime);
+          this.masterSfxGain.connect(this.ctx.destination);
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      setBgmVolume(val) {
+        this.bgmVolume = Math.max(0, Math.min(1, val));
+        if (this.masterBgmGain && this.ctx) {
+          this.masterBgmGain.gain.setValueAtTime(this.bgmEnabled ? this.bgmVolume : 0, this.ctx.currentTime);
+        }
+      }
+
+      setSfxVolume(val) {
+        this.sfxVolume = Math.max(0, Math.min(1, val));
+        if (this.masterSfxGain && this.ctx) {
+          this.masterSfxGain.gain.setValueAtTime(this.enabled ? this.sfxVolume : 0, this.ctx.currentTime);
+        }
+      }
+
+      toggleBgm() {
+        this.bgmEnabled = !this.bgmEnabled;
+        if (this.masterBgmGain && this.ctx) {
+          this.masterBgmGain.gain.setValueAtTime(this.bgmEnabled ? this.bgmVolume : 0, this.ctx.currentTime);
+        }
+        if (this.bgmEnabled && !this.isPlayingBgm) {
+          this.startBgm();
+        }
+        return this.bgmEnabled;
+      }
+
+      setTrack(trackName) {
+        this.currentTrack = trackName;
+        this.step = 0;
+      }
+
+      // Procedural BGM Synthesizer loop
+      startBgm() {
+        this.init();
+        if (this.isPlayingBgm) return;
+        this.isPlayingBgm = true;
+
+        const tick = () => {
+          if (!this.isPlayingBgm) return;
+          this.scheduleNextBeat();
+          const tempo = this.currentTrack === 'panic' ? 140 : this.currentTrack === 'fiesta' ? 128 : 112;
+          const interval = (60 / tempo) * 250; // sixteenth notes
+          this.bgmTimer = setTimeout(tick, interval);
+        };
+        tick();
+      }
+
+      stopBgm() {
+        this.isPlayingBgm = false;
+        clearTimeout(this.bgmTimer);
+      }
+
+      scheduleNextBeat() {
+        if (!this.bgmEnabled || !this.ctx || this.ctx.state !== 'running') return;
+        const now = this.ctx.currentTime + 0.05;
+        const s = this.step % 16;
+        this.step++;
+
+        // TRACK 1: SNEAKY KITTEN LOUNGE (Walking jazzy minor bass + marimba)
+        if (this.currentTrack === 'sneaky') {
+          const bassNotes = [146.83, 0, 164.81, 0, 174.61, 0, 196.0, 0, 220.0, 0, 196.0, 0, 174.61, 0, 164.81, 155.56];
+          const marimbaNotes = [0, 587.33, 0, 523.25, 0, 0, 659.25, 0, 0, 587.33, 0, 0, 698.46, 0, 659.25, 0];
+          
+          if (bassNotes[s]) this.playProceduralNote(bassNotes[s], 'triangle', 0.18, 0.22, 400, this.masterBgmGain, now);
+          if (marimbaNotes[s]) this.playProceduralNote(marimbaNotes[s], 'sine', 0.12, 0.14, 1200, this.masterBgmGain, now);
+          // Soft woodblock on 4 & 12
+          if (s === 4 || s === 12) this.playPercussion(800, 0.04, 0.08, now);
+        }
+        // TRACK 2: PANIC DEFUSE COUNTDOWN (Tense pulsing 16ths + alarm arps)
+        else if (this.currentTrack === 'panic') {
+          const bassNotes = [82.41, 82.41, 110.0, 82.41, 123.47, 82.41, 110.0, 98.0, 82.41, 82.41, 130.81, 123.47, 110.0, 98.0, 87.31, 82.41];
+          const synthNotes = [659.25, 0, 783.99, 0, 659.25, 0, 987.77, 0, 659.25, 0, 880.0, 0, 783.99, 0, 659.25, 0];
+          
+          this.playProceduralNote(bassNotes[s], 'sawtooth', 0.1, 0.18, 500, this.masterBgmGain, now);
+          if (synthNotes[s]) this.playProceduralNote(synthNotes[s], 'square', 0.08, 0.1, 1400, this.masterBgmGain, now);
+          if (s % 2 === 0) this.playPercussion(1200, 0.02, 0.06, now); // hi-hat ticking
+        }
+        // TRACK 3: TACOCAT CARNIVAL FIESTA (Bouncy Latin feline groove)
+        else {
+          const bassNotes = [130.81, 0, 0, 196.0, 0, 130.81, 0, 164.81, 174.61, 0, 0, 220.0, 0, 196.0, 0, 246.94];
+          const pianoNotes = [0, 523.25, 659.25, 0, 523.25, 0, 659.25, 0, 0, 587.33, 698.46, 0, 587.33, 0, 698.46, 0];
+          
+          if (bassNotes[s]) this.playProceduralNote(bassNotes[s], 'triangle', 0.15, 0.25, 600, this.masterBgmGain, now);
+          if (pianoNotes[s]) this.playProceduralNote(pianoNotes[s], 'triangle', 0.1, 0.16, 1800, this.masterBgmGain, now);
+          if (s % 4 === 2) this.playPercussion(600, 0.05, 0.12, now); // Latin clave
+        }
+      }
+
+      playProceduralNote(freq, type, duration, gainVal, filterFreq, outputGain, startTime) {
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          const filter = this.ctx.createBiquadFilter();
+
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, startTime);
+
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(filterFreq, startTime);
+
+          gain.gain.setValueAtTime(gainVal, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+          osc.connect(filter);
+          filter.connect(gain);
+          gain.connect(outputGain);
+
+          osc.start(startTime);
+          osc.stop(startTime + duration);
+        } catch (e) {}
+      }
+
+      playPercussion(freq, duration, gainVal, startTime) {
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, startTime);
+          osc.frequency.exponentialRampToValueAtTime(60, startTime + duration);
+
+          gain.gain.setValueAtTime(gainVal, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+          osc.connect(gain);
+          gain.connect(this.masterBgmGain);
+          osc.start(startTime);
+          osc.stop(startTime + duration);
+        } catch (e) {}
+      }
+
+      // --- SFX METHODS ---
+      playTone(freq, type, duration, gainVal = 0.18) {
+        if (!this.enabled) return;
+        this.init();
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          gain.gain.setValueAtTime(gainVal, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(this.masterSfxGain || this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + duration);
+        } catch (e) {}
+      }
+
+      hover() {
+        this.playTone(600, 'sine', 0.04, 0.06);
+      }
+      cardDraw() {
+        this.playTone(340, 'sine', 0.12, 0.18);
+        setTimeout(() => this.playTone(480, 'sine', 0.08, 0.14), 60);
+      }
+      cardPlay() {
+        this.playTone(440, 'triangle', 0.15, 0.22);
+      }
+      defuse() {
+        this.playTone(523, 'sine', 0.1, 0.2);
+        setTimeout(() => this.playTone(659, 'sine', 0.1, 0.22), 90);
+        setTimeout(() => this.playTone(784, 'sine', 0.12, 0.25), 180);
+        setTimeout(() => this.playTone(1046, 'sine', 0.25, 0.28), 270);
+      }
+      slap() {
+        this.playTone(160, 'square', 0.2, 0.3);
+        setTimeout(() => this.playTone(280, 'triangle', 0.1, 0.25), 50);
+      }
+      skip() {
+        this.playTone(350, 'sine', 0.12, 0.2);
+        setTimeout(() => this.playTone(550, 'sine', 0.15, 0.22), 80);
+      }
+      future() {
+        [587, 740, 880, 1174].forEach((f, i) => {
+          setTimeout(() => this.playTone(f, 'sine', 0.18, 0.15), i * 70);
+        });
+      }
+      emote() {
+        this.playTone(680, 'sine', 0.08, 0.16);
+      }
+      combo() {
+        [440, 554, 659, 880].forEach((f, i) => {
+          setTimeout(() => this.playTone(f, 'triangle', 0.15, 0.2), i * 60);
+        });
+      }
+      explosion() {
+        if (!this.enabled) return;
+        this.init();
+        try {
+          const bufferSize = this.ctx.sampleRate * 1.0;
+          const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+          }
+          const noise = this.ctx.createBufferSource();
+          noise.buffer = buffer;
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(700, this.ctx.currentTime);
+          filter.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 1.0);
+          const gain = this.ctx.createGain();
+          gain.gain.setValueAtTime(0.7, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 1.0);
+          noise.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.masterSfxGain || this.ctx.destination);
+          noise.start();
+        } catch (e) {}
+      }
+      victory() {
+        [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((freq, i) => {
+          setTimeout(() => this.playTone(freq, 'triangle', 0.3, 0.25), i * 130);
+        });
+      }
+    }
+    const sounds = new SoundEngine();
+
+    // --- CLIENT STATE ---
+    let socket = null;
+    let currentRoomId = null;
+    let currentRoomCode = null;
+    let isRoomHost = false;
+    let myPlayerId = null;
+    let localGameState = null;
+    let selectedCards = [];
+    let pendingAlterCards = [];
+    let pendingActionData = null;
+    let autoSortEnabled = true;
+    let pendingDemandTargetId = null;
+    let pendingDemandCards = [];
+
+    // All distinct card types for 3-of-a-kind demand menu
+    const ALL_CARD_TYPES = [
+      { type: 'DEFUSE', title: 'Defuse', icon: 'laser', color: '#16a34a', desc: 'Neutralize an Exploding Kitten' },
+      { type: 'ATTACK', title: 'Attack', icon: 'paw', color: '#ea580c', desc: 'End turn & force next player 2 turns' },
+      { type: 'SKIP', title: 'Skip', icon: 'run', color: '#2563eb', desc: 'End current turn without drawing' },
+      { type: 'FAVOR', title: 'Favor', icon: 'grab', color: '#0891b2', desc: 'Force opponent to give you 1 card' },
+      { type: 'SEE_THE_FUTURE', title: 'See the Future', icon: 'eye', color: '#9333ea', desc: 'Privately peek at top 3 cards' },
+      { type: 'ALTER_THE_FUTURE', title: 'Alter the Future', icon: 'vortex', color: '#c026d3', desc: 'View and rearrange top 3 cards' },
+      { type: 'SHUFFLE', title: 'Shuffle', icon: 'shuffle', color: '#57534e', desc: 'Randomize the draw deck' },
+      { type: 'CAT_HAIRY_POTATO', title: 'Hairy Potato Cat', icon: 'cat', color: '#ca8a04', desc: 'Feral cat for combos' },
+      { type: 'CAT_TACOCAT', title: 'Tacocat', icon: 'cat', color: '#d97706', desc: 'Palindromic feline combo card' },
+      { type: 'CAT_RAINBOW_RALPHING', title: 'Rainbow Cat', icon: 'cat', color: '#db2777', desc: 'Technicolor hairball combo card' },
+      { type: 'CAT_BEARD', title: 'Beard Cat', icon: 'cat', color: '#4f46e5', desc: 'Bristling facial fur combo card' },
+      { type: 'CAT_CATTERMELON', title: 'Cattermelon', icon: 'cat', color: '#059669', desc: 'Juicy summer feline combo card' },
+    ];
+
+    // Priority sorting order for hand auto-sort
+    const SORT_PRIORITY = {
+      'DEFUSE': 1,
+      'ATTACK': 2,
+      'SKIP': 3,
+      'FAVOR': 4,
+      'SEE_THE_FUTURE': 5,
+      'ALTER_THE_FUTURE': 6,
+      'SHUFFLE': 7,
+      'CAT_HAIRY_POTATO': 8,
+      'CAT_TACOCAT': 9,
+      'CAT_RAINBOW_RALPHING': 10,
+      'CAT_BEARD': 11,
+      'CAT_CATTERMELON': 12,
+    };
+
+    function sortHand(cards) {
+      if (!cards) return [];
+      return [...cards].sort((a, b) => {
+        const pA = SORT_PRIORITY[a.type] || 99;
+        const pB = SORT_PRIORITY[b.type] || 99;
+        if (pA !== pB) return pA - pB;
+        return (a.title || '').localeCompare(b.title || '');
+      });
+    }
+
+    // --- AVATAR SVG GENERATOR ---
+    function getAvatarSVG(avatarId) {
+      switch (avatarId) {
+        case 'sharky':
+          return `<svg viewBox="0 0 100 100" class="w-full h-full"><circle cx="50" cy="50" r="46" fill="#0284c7"/><path d="M25,65 Q50,20 75,65 Z" fill="#e0f2fe"/><circle cx="42" cy="45" r="5" fill="#000"/><circle cx="58" cy="45" r="5" fill="#000"/><polygon points="35,62 40,56 45,62 50,56 55,62 60,56 65,62" fill="#fff"/></svg>`;
+        case 'bacon_cat':
+          return `<svg viewBox="0 0 100 100" class="w-full h-full"><circle cx="50" cy="50" r="46" fill="#d97706"/><rect x="25" y="30" width="50" height="12" rx="4" fill="#ef4444"/><rect x="25" y="46" width="50" height="10" rx="4" fill="#fef08a"/><circle cx="40" cy="65" r="4" fill="#000"/><circle cx="60" cy="65" r="4" fill="#000"/></svg>`;
+        case 'schmoopy':
+          return `<svg viewBox="0 0 100 100" class="w-full h-full"><circle cx="50" cy="50" r="46" fill="#ec4899"/><polygon points="30,30 20,10 42,24" fill="#f43f5e"/><polygon points="70,30 80,10 58,24" fill="#f43f5e"/><circle cx="40" cy="50" r="6" fill="#fff"/><circle cx="60" cy="50" r="6" fill="#fff"/><circle cx="40" cy="50" r="3" fill="#000"/><circle cx="60" cy="50" r="3" fill="#000"/><ellipse cx="50" cy="62" rx="6" ry="4" fill="#fb7185"/></svg>`;
+        case 'otho':
+          return `<svg viewBox="0 0 100 100" class="w-full h-full"><circle cx="50" cy="50" r="46" fill="#6d28d9"/><rect x="35" y="15" width="30" height="25" rx="3" fill="#18181b"/><rect x="25" y="36" width="50" height="6" rx="2" fill="#18181b"/><circle cx="42" cy="55" r="4" fill="#fff"/><circle cx="58" cy="55" r="4" fill="#fff"/><line x1="38" y1="70" x2="62" y2="70" stroke="#000" stroke-width="3"/></svg>`;
+        case 'lydia':
+          return `<svg viewBox="0 0 100 100" class="w-full h-full"><circle cx="50" cy="50" r="46" fill="#8b5cf6"/><polygon points="50,20 40,35 60,35" fill="#f472b6"/><circle cx="38" cy="52" r="5" fill="#000"/><circle cx="62" cy="52" r="5" fill="#000"/><ellipse cx="50" cy="65" rx="5" ry="3" fill="#f43f5e"/></svg>`;
+        default:
+          return `<svg viewBox="0 0 100 100" class="w-full h-full"><circle cx="50" cy="50" r="46" fill="#2563eb"/><circle cx="38" cy="46" r="5" fill="#fff"/><circle cx="62" cy="46" r="5" fill="#fff"/><circle cx="39" cy="46" r="2.5" fill="#000"/><circle cx="61" cy="46" r="2.5" fill="#000"/><path d="M40,65 Q50,75 60,65" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/></svg>`;
+      }
+    }
+
+    // --- HIGH-FIDELITY VECTOR CARD ARTWORK GENERATOR ---
+    function getCardArtwork(type) {
+      switch (type) {
+        case 'EXPLODING_KITTEN':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <radialGradient id="kglow" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#f87171"/><stop offset="100%" stop-color="#991b1b"/></radialGradient>
+            <circle cx="50" cy="40" r="34" fill="url(#kglow)"/>
+            <!-- Cat head & ears -->
+            <polygon points="26,24 20,8 38,18" fill="#18181b"/>
+            <polygon points="74,24 80,8 62,18" fill="#18181b"/>
+            <circle cx="50" cy="42" r="26" fill="#18181b"/>
+            <!-- Glowing red eyes -->
+            <ellipse cx="40" cy="38" rx="5" ry="6" fill="#fbbf24"/>
+            <ellipse cx="60" cy="38" rx="5" ry="6" fill="#fbbf24"/>
+            <ellipse cx="40" cy="38" rx="2" ry="5" fill="#ef4444"/>
+            <ellipse cx="60" cy="38" rx="2" ry="5" fill="#ef4444"/>
+            <!-- Cute sinister grin -->
+            <path d="M42,50 Q50,58 58,50" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+            <polygon points="46,50 48,54 50,50" fill="#fff"/>
+            <polygon points="50,50 52,54 54,50" fill="#fff"/>
+            <!-- TNT dynamite sticks in paws -->
+            <rect x="30" y="58" width="40" height="10" rx="3" fill="#dc2626" stroke="#450a0a" stroke-width="1.5"/>
+            <rect x="36" y="58" width="5" height="10" fill="#fef08a"/>
+            <rect x="58" y="58" width="5" height="10" fill="#fef08a"/>
+            <!-- Sizzling fuse & spark -->
+            <path d="M68,58 Q78,50 76,42" fill="none" stroke="#f59e0b" stroke-width="2"/>
+            <circle cx="76" cy="42" r="3" fill="#fef08a"/>
+            <polygon points="76,38 78,41 81,42 78,43 76,46 74,43 71,42 74,41" fill="#f97316"/>
+          </svg>`;
+
+        case 'DEFUSE':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Laser pointer body -->
+            <rect x="15" y="44" width="38" height="12" rx="3" fill="#94a3b8" stroke="#334155" stroke-width="2" transform="rotate(-15 20 48)"/>
+            <rect x="46" y="36" width="12" height="6" rx="2" fill="#22c55e" stroke="#15803d" stroke-width="1.5" transform="rotate(-15 20 48)"/>
+            <circle cx="28" cy="47" r="2.5" fill="#ef4444"/>
+            <!-- Radiant laser beam -->
+            <line x1="56" y1="36" x2="86" y2="28" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="86" cy="28" r="6" fill="#86efac" opacity="0.6"/>
+            <circle cx="86" cy="28" r="3" fill="#22c55e"/>
+            <!-- Playful Cat paws swiping -->
+            <ellipse cx="80" cy="56" rx="8" ry="6" fill="#fbcfe8" stroke="#be185d" stroke-width="1.5"/>
+            <circle cx="74" cy="50" r="2.5" fill="#f43f5e"/>
+            <circle cx="80" cy="48" r="2.5" fill="#f43f5e"/>
+            <circle cx="86" cy="50" r="2.5" fill="#f43f5e"/>
+            <circle cx="80" cy="55" r="4" fill="#fda4af"/>
+          </svg>`;
+
+        case 'ATTACK':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Speed streaks -->
+            <path d="M10,25 L35,28 M8,40 L30,42 M14,55 L38,52" stroke="#ea580c" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+            <!-- Tiger Paw boxing punch -->
+            <ellipse cx="60" cy="40" rx="22" ry="18" fill="#ea580c" stroke="#7c2d12" stroke-width="2.5"/>
+            <!-- Tiger stripes -->
+            <path d="M48,28 L56,36 M62,24 L66,34 M52,50 L60,44" stroke="#431407" stroke-width="3" stroke-linecap="round"/>
+            <!-- Claws -->
+            <polygon points="76,26 88,24 82,32" fill="#fef08a"/>
+            <polygon points="80,34 94,36 82,42" fill="#fef08a"/>
+            <polygon points="76,46 88,52 78,54" fill="#fef08a"/>
+            <!-- Comic impact starburst -->
+            <polygon points="88,18 92,26 100,28 93,34 96,42 88,38 82,44 82,36 74,32 82,28" fill="#fbbf24" opacity="0.8"/>
+          </svg>`;
+
+        case 'SKIP':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Dust cloud puffs -->
+            <circle cx="24" cy="54" r="8" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"/>
+            <circle cx="16" cy="48" r="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+            <circle cx="32" cy="58" r="6" fill="#cbd5e1"/>
+            <!-- Running Cat Feet / Sneakers -->
+            <path d="M40,30 Q55,20 68,36 L78,40" fill="none" stroke="#0284c7" stroke-width="7" stroke-linecap="round"/>
+            <ellipse cx="80" cy="42" rx="9" ry="5" fill="#ef4444" stroke="#991b1b" stroke-width="1.5"/>
+            <rect x="76" y="44" width="9" height="3" fill="#fff" rx="1"/>
+            <path d="M48,42 Q40,50 56,58 L62,60" fill="none" stroke="#0284c7" stroke-width="7" stroke-linecap="round"/>
+            <ellipse cx="64" cy="62" rx="9" ry="5" fill="#ef4444" stroke="#991b1b" stroke-width="1.5"/>
+            <!-- Wind speed lines -->
+            <line x1="28" y1="26" x2="60" y2="22" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="38" y1="36" x2="70" y2="32" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>`;
+
+        case 'SEE_THE_FUTURE':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Stand base -->
+            <path d="M35,68 L65,68 L58,56 L42,56 Z" fill="#ca8a04" stroke="#713f12" stroke-width="1.5"/>
+            <!-- Crystal Ball sphere with gradient -->
+            <radialGradient id="cglow" cx="40%" cy="35%" r="65%"><stop offset="0%" stop-color="#f5d0fe"/><stop offset="50%" stop-color="#a855f7"/><stop offset="100%" stop-color="#4a044e"/></radialGradient>
+            <circle cx="50" cy="38" r="26" fill="url(#cglow)" stroke="#7e22ce" stroke-width="2"/>
+            <!-- Mystic Eye inside -->
+            <ellipse cx="50" cy="38" rx="15" ry="9" fill="#fae8ff"/>
+            <circle cx="50" cy="38" r="6" fill="#581c87"/>
+            <circle cx="50" cy="38" r="2.5" fill="#38bdf8"/>
+            <circle cx="48" cy="36" r="1.5" fill="#fff"/>
+            <!-- Sparkles -->
+            <polygon points="26,20 28,24 32,25 28,27 26,31 24,27 20,25 24,24" fill="#fde047"/>
+            <polygon points="76,22 77,25 80,26 77,28 76,31 74,28 71,26 74,25" fill="#fde047"/>
+          </svg>`;
+
+        case 'ALTER_THE_FUTURE':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Cosmic timeline swirl -->
+            <circle cx="50" cy="40" r="30" fill="#2e1065" stroke="#a21caf" stroke-width="2"/>
+            <path d="M50,15 A25,25 0 0,1 75,40 A25,25 0 0,1 50,65 A25,25 0 0,1 25,40" fill="none" stroke="#f472b6" stroke-width="3" stroke-dasharray="8,4"/>
+            <!-- Clock face warped -->
+            <circle cx="50" cy="40" r="18" fill="#fdf4ff" stroke="#86198f" stroke-width="2"/>
+            <line x1="50" y1="40" x2="50" y2="28" stroke="#701a75" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="50" y1="40" x2="60" y2="44" stroke="#701a75" stroke-width="2" stroke-linecap="round"/>
+            <!-- Circular reorder arrows -->
+            <polygon points="28,34 22,40 32,42" fill="#c026d3"/>
+            <polygon points="72,46 78,40 68,38" fill="#c026d3"/>
+          </svg>`;
+
+        case 'FAVOR':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Vampire pug in top hat -->
+            <ellipse cx="50" cy="48" rx="20" ry="18" fill="#d6d3d1" stroke="#44403c" stroke-width="2"/>
+            <!-- Pug wrinkles & ears -->
+            <ellipse cx="32" cy="40" rx="5" ry="9" fill="#78716c" transform="rotate(-20 32 40)"/>
+            <ellipse cx="68" cy="40" rx="5" ry="9" fill="#78716c" transform="rotate(20 68 40)"/>
+            <ellipse cx="50" cy="54" rx="9" ry="6" fill="#1c1917"/>
+            <ellipse cx="42" cy="44" rx="3.5" ry="4" fill="#000"/>
+            <ellipse cx="58" cy="44" rx="3.5" ry="4" fill="#000"/>
+            <!-- Tiny fangs -->
+            <polygon points="46,55 48,59 50,55" fill="#fff"/>
+            <polygon points="50,55 52,59 54,55" fill="#fff"/>
+            <!-- Fancy Top Hat -->
+            <rect x="36" y="16" width="28" height="20" rx="3" fill="#18181b"/>
+            <rect x="30" y="32" width="40" height="5" rx="2" fill="#18181b"/>
+            <rect x="36" y="29" width="28" height="3" fill="#dc2626"/>
+            <!-- Golden Wax Card in mouth -->
+            <rect x="38" y="58" width="24" height="15" rx="2" fill="#fef08a" stroke="#ca8a04" stroke-width="1.5" transform="rotate(-5 50 65)"/>
+            <circle cx="50" cy="65" r="3" fill="#dc2626"/>
+          </svg>`;
+
+        case 'SHUFFLE':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Swirling cards tornado -->
+            <path d="M25,25 Q50,10 75,25 Q85,45 50,50 Q15,55 50,72" fill="none" stroke="#78716c" stroke-width="3" stroke-dasharray="6,4"/>
+            <!-- Flying cards in vortex -->
+            <rect x="22" y="24" width="16" height="22" rx="2" fill="#fff" stroke="#ef4444" stroke-width="1.5" transform="rotate(25 30 35)"/>
+            <rect x="62" y="20" width="16" height="22" rx="2" fill="#fff" stroke="#3b82f6" stroke-width="1.5" transform="rotate(-30 70 30)"/>
+            <rect x="42" y="44" width="16" height="22" rx="2" fill="#fff" stroke="#22c55e" stroke-width="1.5" transform="rotate(10 50 55)"/>
+            <!-- Dizzy spiral eyes -->
+            <circle cx="44" cy="36" r="3" fill="none" stroke="#000" stroke-width="1.5"/>
+            <circle cx="56" cy="36" r="3" fill="none" stroke="#000" stroke-width="1.5"/>
+          </svg>`;
+
+        case 'CAT_HAIRY_POTATO':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Potato body -->
+            <ellipse cx="50" cy="45" rx="30" ry="24" fill="#ca8a04" stroke="#713f12" stroke-width="2.5"/>
+            <!-- Potato Cat ears -->
+            <polygon points="32,24 24,12 40,18" fill="#a16207"/>
+            <polygon points="68,24 76,12 60,18" fill="#a16207"/>
+            <!-- Big anime cute eyes -->
+            <ellipse cx="40" cy="40" rx="5" ry="6" fill="#000"/>
+            <ellipse cx="60" cy="40" rx="5" ry="6" fill="#000"/>
+            <circle cx="42" cy="38" r="2" fill="#fff"/>
+            <circle cx="62" cy="38" r="2" fill="#fff"/>
+            <!-- Rosy blush -->
+            <ellipse cx="32" cy="46" rx="4" ry="2" fill="#f87171" opacity="0.6"/>
+            <ellipse cx="68" cy="46" rx="4" ry="2" fill="#f87171" opacity="0.6"/>
+            <!-- Cute mouth -->
+            <path d="M46,47 Q50,51 54,47" fill="none" stroke="#451a03" stroke-width="2" stroke-linecap="round"/>
+            <!-- Green sprout on head -->
+            <path d="M50,22 Q52,12 60,10 M50,22 Q46,14 42,16" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>`;
+
+        case 'CAT_TACOCAT':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Crispy Taco shell -->
+            <path d="M18,54 C18,22 82,22 82,54 Z" fill="#eab308" stroke="#854d0e" stroke-width="2.5"/>
+            <!-- Lettuce & Tomatoes spilling -->
+            <path d="M22,48 Q30,42 38,48 Q46,42 54,48 Q62,42 70,48 Q78,42 82,48" fill="none" stroke="#22c55e" stroke-width="4"/>
+            <circle cx="34" cy="44" r="3" fill="#ef4444"/>
+            <circle cx="50" cy="43" r="3" fill="#ef4444"/>
+            <circle cx="66" cy="44" r="3" fill="#ef4444"/>
+            <!-- Cat face inside taco -->
+            <polygon points="34,26 28,14 42,20" fill="#fef08a"/>
+            <polygon points="66,26 72,14 58,20" fill="#fef08a"/>
+            <ellipse cx="42" cy="34" rx="4" ry="5" fill="#451a03"/>
+            <ellipse cx="58" cy="34" rx="4" ry="5" fill="#451a03"/>
+            <circle cx="43" cy="33" r="1.5" fill="#fff"/>
+            <circle cx="59" cy="33" r="1.5" fill="#fff"/>
+            <path d="M46,39 Q50,42 54,39" fill="none" stroke="#451a03" stroke-width="2"/>
+          </svg>`;
+
+        case 'CAT_RAINBOW_RALPHING':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Chubby Cat face -->
+            <ellipse cx="36" cy="34" rx="20" ry="18" fill="#fbcfe8" stroke="#be185d" stroke-width="2"/>
+            <polygon points="22,22 16,10 30,16" fill="#f472b6"/>
+            <polygon points="46,20 54,10 44,14" fill="#f472b6"/>
+            <!-- Happy squinting eyes -->
+            <path d="M26,30 Q30,26 34,30" fill="none" stroke="#831843" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M38,30 Q42,26 46,30" fill="none" stroke="#831843" stroke-width="2.5" stroke-linecap="round"/>
+            <!-- Epic Rainbow Stream bursting from mouth -->
+            <path d="M36,44 Q60,40 92,60" fill="none" stroke="#ef4444" stroke-width="4"/>
+            <path d="M36,47 Q60,43 92,63" fill="none" stroke="#f97316" stroke-width="4"/>
+            <path d="M36,50 Q60,46 92,66" fill="none" stroke="#eab308" stroke-width="4"/>
+            <path d="M36,53 Q60,49 92,69" fill="none" stroke="#22c55e" stroke-width="4"/>
+            <path d="M36,56 Q60,52 92,72" fill="none" stroke="#3b82f6" stroke-width="4"/>
+            <path d="M36,59 Q60,55 92,75" fill="none" stroke="#a855f7" stroke-width="4"/>
+            <!-- Glitter stars -->
+            <polygon points="76,36 78,40 82,41 78,43 76,47 74,43 70,41 74,40" fill="#fde047"/>
+            <polygon points="90,46 91,49 94,50 91,51 90,54 89,51 86,50 89,49" fill="#fde047"/>
+          </svg>`;
+
+        case 'CAT_BEARD':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Cat head -->
+            <circle cx="50" cy="38" r="22" fill="#d97706" stroke="#78350f" stroke-width="2"/>
+            <!-- Plaid lumberjack beanie -->
+            <path d="M30,28 Q50,14 70,28 Z" fill="#dc2626"/>
+            <line x1="42" y1="18" x2="42" y2="28" stroke="#18181b" stroke-width="2"/>
+            <line x1="58" y1="18" x2="58" y2="28" stroke="#18181b" stroke-width="2"/>
+            <!-- Cat eyes & nose -->
+            <circle cx="42" cy="34" r="3.5" fill="#000"/>
+            <circle cx="58" cy="34" r="3.5" fill="#000"/>
+            <!-- Magnificent bushy hipster beard & mustache -->
+            <path d="M34,40 Q50,48 66,40 Q74,68 50,74 Q26,68 34,40 Z" fill="#92400e" stroke="#451a03" stroke-width="2"/>
+            <path d="M36,42 Q50,48 64,42 Q50,38 36,42 Z" fill="#b45309"/>
+          </svg>`;
+
+        case 'CAT_CATTERMELON':
+          return `<svg viewBox="0 0 100 80" class="w-full h-full drop-shadow">
+            <!-- Watermelon rind & crust -->
+            <path d="M20,25 C30,68 70,68 80,25 Z" fill="#15803d" stroke="#14532d" stroke-width="2.5"/>
+            <path d="M24,25 C32,63 68,63 76,25 Z" fill="#86efac"/>
+            <path d="M27,25 C34,58 66,58 73,25 Z" fill="#f43f5e"/>
+            <!-- Cat Ears on rind corners -->
+            <polygon points="20,25 14,12 28,18" fill="#15803d"/>
+            <polygon points="80,25 86,12 72,18" fill="#15803d"/>
+            <!-- Smiling Cat face & seed freckles -->
+            <ellipse cx="42" cy="34" rx="3.5" ry="4" fill="#000"/>
+            <ellipse cx="58" cy="34" rx="3.5" ry="4" fill="#000"/>
+            <circle cx="43" cy="33" r="1" fill="#fff"/>
+            <circle cx="59" cy="33" r="1" fill="#fff"/>
+            <path d="M46,40 Q50,44 54,40" fill="none" stroke="#881337" stroke-width="2" stroke-linecap="round"/>
+            <!-- Black seeds -->
+            <ellipse cx="36" cy="46" rx="2" ry="3" fill="#18181b"/>
+            <ellipse cx="64" cy="46" rx="2" ry="3" fill="#18181b"/>
+            <ellipse cx="50" cy="50" rx="2" ry="3" fill="#18181b"/>
+          </svg>`;
+
+        default:
+          return `<div class="w-full h-full flex items-center justify-center text-4xl">🃏</div>`;
+      }
+    }
+
+    // --- MINI CARD ICON GENERATOR (For Log & Pills) ---
+    function getCardIcon(iconName) {
+      switch (iconName) {
+        case 'bomb':
+          return `<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-red-600"><path d="M12 2a1 1 0 0 1 1 1v1.07A8.001 8.001 0 0 1 20 12a8 8 0 1 1-16 0c0-3.96 2.87-7.25 6.67-7.91L11 3a1 1 0 0 1 1-1zm0 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm7-3l1.5-1.5M18 1l1.5 1.5"/></svg>`;
+        case 'laser':
+          return `<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-green-600"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>`;
+        case 'paw':
+          return `<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-orange-600"><ellipse cx="12" cy="15" rx="5" ry="4"/><circle cx="7" cy="8" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="17" cy="8" r="2"/></svg>`;
+        case 'run':
+          return `<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-blue-600"><path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7z"/></svg>`;
+        case 'eye':
+          return `<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-purple-600"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>`;
+        case 'vortex':
+          return `<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-fuchsia-600"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>`;
+        case 'grab':
+          return `<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-cyan-600"><path d="M18 10V5a3 3 0 0 0-6 0v5H9V7a3 3 0 0 0-6 0v8a7 7 0 0 0 14 0v-5z"/></svg>`;
+        case 'shuffle':
+          return `<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-stone-600"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>`;
+        default:
+          return `<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-lime-600"><circle cx="12" cy="12" r="9"/></svg>`;
+      }
+    }
+
+    // --- INITIALIZE SOCKET ---
+    function initSocket() {
+      if (socket) return;
+      socket = io();
+
+      socket.on('connect', () => {
+        myPlayerId = socket.id;
+        console.log('[Client] Connected:', socket.id);
+      });
+
+      // Lobby updates
+      socket.on('room_updated', (data) => {
+        currentRoomId = data.roomId;
+        currentRoomCode = data.roomCode;
+        isRoomHost = data.hostId === socket.id;
+        renderLobby(data);
+
+        if (data.gameStarted) {
+          showScreen('game');
+        } else {
+          showScreen('lobby');
+        }
+      });
+
+      // Authoritative masked game state
+      socket.on('game_state', (state) => {
+        if (autoSortEnabled && state.myHand) {
+          state.myHand = sortHand(state.myHand);
+        }
+        localGameState = state;
+        renderGameTable(state);
+      });
+
+      // Discard browser for 5-card combo
+      socket.on('open_discard_browser', (data) => {
+        sounds.cardPlay();
+        showDiscardBrowserModal(data.discardPile);
+      });
+
+      // Multi-card combo announcement toast
+      socket.on('combo_result', (data) => {
+        sounds.cardPlay();
+        if (data.type === 'THREE_OF_A_KIND') {
+          if (data.success) {
+            showComboNotification('🎯 3-OF-A-KIND SUCCESS!', `${data.attackerName} demanded ${data.demandedTitle} from ${data.victimName} and stole it!`, '🎯');
+          } else {
+            showComboNotification('❌ 3-OF-A-KIND MISSED!', `${data.attackerName} demanded ${data.demandedTitle} from ${data.victimName}, but they had none!`, '💨');
+          }
+        } else if (data.type === 'PAIR') {
+          showComboNotification('😼 PAIR STEAL!', `${data.attackerName} played a pair of ${data.cardTitle}s and stole a random card from ${data.victimName}!`, '😼');
+        }
+      });
+
+      // Special card prompts
+      socket.on('see_future_result', (data) => {
+        sounds.cardPlay();
+        showSeeFutureModal(data.cards);
+      });
+
+      socket.on('alter_future_prompt', (data) => {
+        sounds.cardPlay();
+        showAlterFutureModal(data.cards);
+      });
+
+      socket.on('card_drawn', (data) => {
+        sounds.cardDraw();
+      });
+
+      socket.on('card_played', (data) => {
+        sounds.cardPlay();
+      });
+
+      socket.on('kitten_defused', (data) => {
+        sounds.defuse();
+      });
+
+      socket.on('player_exploded', (data) => {
+        triggerExplosionVisual();
+      });
+
+      socket.on('game_over', (data) => {
+        showGameOverModal(data);
+      });
+
+      socket.on('chat_message', (data) => {
+        showFloatingChat(data.senderId, data.message);
+      });
+
+      socket.on('kicked', () => {
+        showComboNotification('REMOVED', 'You have been kicked by the room host.', '⚠️');
+        showScreen('menu');
+      });
+    }
+
+    // --- SCREEN NAVIGATION ---
+    function showScreen(screenId) {
+      document.getElementById('screen-menu').classList.add('hidden');
+      document.getElementById('screen-lobby').classList.add('hidden');
+      document.getElementById('screen-game').classList.add('hidden');
+
+      if (screenId === 'menu') {
+        document.getElementById('screen-menu').classList.remove('hidden');
+      } else if (screenId === 'lobby') {
+        document.getElementById('screen-lobby').classList.remove('hidden');
+      } else if (screenId === 'game') {
+        document.getElementById('screen-game').classList.remove('hidden');
+      }
+    }
+
+    // --- LOBBY RENDERER ---
+    function renderLobby(data) {
+      document.getElementById('lobby-code-badge').innerText = data.roomCode;
+      document.getElementById('lobby-privacy-tag').innerText = data.isPrivate ? '🔒 PRIVATE PARTY' : '🌐 PUBLIC LOBBY';
+      document.getElementById('lobby-slots-count').innerText = `PLAYERS: ${data.players.length} / 5`;
+
+      const grid = document.getElementById('lobby-members-grid');
+      grid.innerHTML = '';
+
+      // Render joined players
+      data.players.forEach((p) => {
+        const isMe = p.id === socket.id;
+        const card = document.createElement('div');
+        card.className = `flex flex-col items-center justify-between p-4 rounded-2xl bg-stone-900/90 border-3 ${
+          p.isReady ? 'border-lime-500 shadow-[0_0_15px_rgba(132,204,22,0.3)]' : 'border-stone-800'
+        } relative`;
+
+        card.innerHTML = `
+          ${p.isHost ? '<span class="absolute -top-3 bg-amber-500 text-stone-950 font-bangers text-[10px] px-2 py-0.5 rounded-full border border-stone-950 shadow">👑 HOST</span>' : ''}
+          <div class="w-16 h-16 rounded-full overflow-hidden border-2 border-stone-700 bg-stone-800 mb-2">
+            ${getAvatarSVG(p.avatarId)}
+          </div>
+          <div class="font-bangers text-base text-yellow-300 text-center leading-tight">
+            ${p.name} ${isMe ? '<span class="text-xs text-stone-400">(YOU)</span>' : ''}
+          </div>
+          <div class="font-bangers text-xs mt-1 ${p.isReady ? 'text-lime-400' : 'text-stone-400'}">
+            ${p.isBot ? '🤖 BOT' : p.isReady ? 'READY!' : 'WAITING...'}
+          </div>
+          ${
+            isRoomHost && !p.isHost
+              ? `<button class="mt-2 text-[10px] font-bangers text-red-400 hover:text-red-300 cursor-pointer" onclick="kickPlayer('${p.id}')">✕ KICK</button>`
+              : ''
+          }
+        `;
+        grid.appendChild(card);
+      });
+
+      // Render Empty Slots / Add Bot button for Host
+      const remainingSlots = 5 - data.players.length;
+      for (let i = 0; i < remainingSlots; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'flex flex-col items-center justify-center p-4 rounded-2xl border-2 border-dashed border-stone-700 bg-stone-900/40 text-stone-500 min-h-[140px]';
+
+        if (isRoomHost) {
+          slot.innerHTML = `
+            <button onclick="addBot()" class="comic-btn px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-200 font-bangers text-xs cursor-pointer">
+              + ADD BOT
+            </button>
+          `;
+        } else {
+          slot.innerHTML = `<span class="font-bangers text-xs">WAITING FOR PLAYER...</span>`;
+        }
+        grid.appendChild(slot);
+      }
+
+      // Start button logic
+      const btnStart = document.getElementById('btn-start-game');
+      if (isRoomHost) {
+        btnStart.classList.remove('hidden');
+        const allReady = data.players.every((p) => p.isReady || p.isBot);
+        btnStart.disabled = !(data.players.length >= 2 && allReady);
+      } else {
+        btnStart.classList.add('hidden');
+      }
+
+      // Ready button text
+      const me = data.players.find((p) => p.id === socket.id);
+      const btnReady = document.getElementById('btn-toggle-ready');
+      if (me && me.isReady) {
+        btnReady.innerText = 'UNREADY';
+        btnReady.classList.remove('bg-blue-600', 'hover:bg-blue-500');
+        btnReady.classList.add('bg-stone-700', 'hover:bg-stone-600');
+      } else {
+        btnReady.innerText = 'READY UP';
+        btnReady.classList.remove('bg-stone-700', 'hover:bg-stone-600');
+        btnReady.classList.add('bg-blue-600', 'hover:bg-blue-500');
+      }
+    }
+
+    // Host action helpers
+    window.addBot = function() {
+      if (!socket || !currentRoomId) return;
+      socket.emit('add_bot', { roomId: currentRoomId });
+    };
+
+    window.kickPlayer = function(targetId) {
+      if (!socket || !currentRoomId) return;
+      socket.emit('kick_player', { roomId: currentRoomId, targetId });
+    };
+
+    // --- CHRONICLES TAB STATE ---
+    let activeChroniclesTab = 'live'; // 'live' | 'rounds'
+    let selectedRoundNumber = 1;
+    let lastSeenActionCount = 0;
+
+    // --- GAME TABLE RENDERER ---
+    function renderGameTable(state) {
+      // 1. Gauge needle and percentage
+      const needle = document.getElementById('gauge-needle');
+      const pText = document.getElementById('gauge-percentage-text');
+      const roundedChance = Math.round(state.chanceOfKitten || 0);
+      pText.innerText = `${roundedChance}%`;
+
+      // Needle angle: -90deg (0%) to +90deg (100%)
+      const angle = -90 + (roundedChance / 100) * 180;
+      needle.style.transform = `rotate(${angle}deg)`;
+
+      // 2. Deck Count Badge
+      document.getElementById('deck-count-badge').innerText = `${state.deckCount} CARDS LEFT`;
+
+      // Pulse badge on Draw Deck
+      const drawBadge = document.getElementById('draw-pulse-badge');
+      if (state.isMyTurn && state.turnState === 'NORMAL') {
+        drawBadge.classList.remove('hidden');
+      } else {
+        drawBadge.classList.add('hidden');
+      }
+
+      // 3. Top Discard Card with Vector Artwork
+      const discardSlot = document.getElementById('discard-card-slot');
+      if (state.topDiscard) {
+        discardSlot.className = 'w-28 h-40 sm:w-36 sm:h-52 rounded-2xl bg-white border-3 border-stone-950 flex flex-col justify-between p-2 shadow-2xl rotate-2 hover:rotate-0 transition-transform';
+        discardSlot.style.borderColor = state.topDiscard.badgeColor || '#000';
+        discardSlot.innerHTML = `
+          <div class="flex items-center justify-between pointer-events-none">
+            <span class="font-bangers text-[10px] sm:text-xs px-1.5 py-0.5 rounded text-white shadow-xs" style="background-color:${state.topDiscard.badgeColor}">
+              ${state.topDiscard.title.split(' ')[0]}
+            </span>
+            ${getCardIcon(state.topDiscard.iconName)}
+          </div>
+          <div class="flex-1 w-full flex items-center justify-center my-1 pointer-events-none max-h-24 sm:max-h-28 overflow-hidden">
+            ${getCardArtwork(state.topDiscard.type)}
+          </div>
+          <div class="pointer-events-none">
+            <div class="font-bangers text-center text-stone-900 text-xs sm:text-sm leading-tight">
+              ${state.topDiscard.title}
+            </div>
+            <div class="font-fredoka text-[9px] text-stone-600 text-center italic truncate">
+              ${state.topDiscard.subTitle}
+            </div>
+          </div>
+        `;
+      } else {
+        discardSlot.className = 'w-28 h-40 sm:w-36 sm:h-52 rounded-2xl bg-black/40 border-3 border-dashed border-stone-700 flex flex-col items-center justify-center p-2 text-center relative rotate-2';
+        discardSlot.innerHTML = `<span class="font-bangers text-stone-500 text-sm">DISCARD PILE<br><span class="text-[10px] text-stone-600">(EMPTY)</span></span>`;
+      }
+
+      // 4. Enhanced Table Chronicles & Round History
+      renderChronicles(state);
+
+      // Stacked turns tag
+      document.getElementById('turns-stacked-tag').innerText = `${state.turnsRemaining} TURN${state.turnsRemaining > 1 ? 'S' : ''}`;
+      document.getElementById('current-round-badge').innerText = `ROUND ${state.currentRound || 1}`;
+
+      // 5. Opponents Row
+      const opponentsRow = document.getElementById('game-opponents-row');
+      opponentsRow.innerHTML = '';
+
+      state.players.forEach((p, idx) => {
+        if (p.id === state.myId) return; // exclude self from top row
+
+        const isActive = state.activePlayerIndex === idx;
+        const opp = document.createElement('div');
+        opp.id = `opp-box-${p.id}`;
+        opp.className = `flex flex-col items-center p-1.5 rounded-xl border-2 transition-all ${
+          p.isDead
+            ? 'opacity-40 border-stone-900 bg-stone-950/70'
+            : isActive
+            ? 'border-yellow-400 bg-amber-950/80 shadow-[0_0_15px_rgba(251,191,36,0.6)] scale-105'
+            : 'border-stone-800 bg-black/50'
+        } relative min-w-[70px] sm:min-w-[85px]`;
+
+        opp.innerHTML = `
+          <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-full overflow-hidden border-2 ${
+            isActive ? 'border-yellow-400' : 'border-stone-700'
+          } bg-stone-900 mb-1 relative shadow">
+            ${getAvatarSVG(p.avatarId)}
+            ${p.isDead ? '<span class="absolute inset-0 flex items-center justify-center text-xl bg-black/75">💀</span>' : ''}
+          </div>
+          <div class="font-bangers text-xs sm:text-sm text-amber-100 truncate max-w-[80px]">
+            ${p.name}
+          </div>
+          <div class="flex items-center gap-1 font-bangers text-[10px] text-amber-300">
+            <span>🃏 ${p.cardCount}</span>
+          </div>
+        `;
+        opponentsRow.appendChild(opp);
+      });
+
+      // 6. Active turn status badge
+      const activeP = state.players[state.activePlayerIndex];
+      const statusBadge = document.getElementById('player-status-badge');
+      if (state.isMyTurn) {
+        statusBadge.innerHTML = `<span class="text-lime-400 font-bold animate-pulse">YOUR TURN!</span> (${state.turnsRemaining} turn${state.turnsRemaining > 1 ? 's' : ''} left)`;
+      } else {
+        statusBadge.innerHTML = `<span>${activeP ? activeP.name : 'OPPONENT'}'S TURN</span> (${state.turnsRemaining} left)`;
+      }
+
+      // 7. Player Hand Cards Tray with Dynamic Fan Spread & Vector Artwork
+      const handContainer = document.getElementById('player-hand-container');
+      handContainer.innerHTML = '';
+
+      const hand = state.myHand || [];
+      const mid = (hand.length - 1) / 2;
+
+      hand.forEach((card, idx) => {
+        const isSelected = selectedCards.some((c) => c.id === card.id);
+        const cardElem = document.createElement('div');
+        
+        // Realistic card fanning transformation
+        const rot = (idx - mid) * 2.2;
+        const yOffset = isSelected ? -30 : Math.abs(idx - mid) * 2;
+        
+        cardElem.className = `card-item relative w-24 h-38 sm:w-32 sm:h-50 rounded-2xl bg-white border-3 border-stone-950 flex flex-col justify-between p-2 shadow-xl cursor-pointer ${
+          isSelected ? 'selected' : ''
+        }`;
+        cardElem.style.borderColor = card.badgeColor || '#000';
+        cardElem.style.transform = `rotate(${rot}deg) translateY(${yOffset}px)`;
+
+        cardElem.innerHTML = `
+          <div class="flex items-center justify-between pointer-events-none">
+            <span class="font-bangers text-[9px] sm:text-xs px-1.5 py-0.5 rounded text-white shadow-xs" style="background-color:${card.badgeColor}">
+              ${card.title.split(' ')[0]}
+            </span>
+            ${getCardIcon(card.iconName)}
+          </div>
+          <!-- Vector Illustration Artwork -->
+          <div class="flex-1 w-full flex items-center justify-center my-0.5 pointer-events-none max-h-20 sm:max-h-24 overflow-hidden">
+            ${getCardArtwork(card.type)}
+          </div>
+          <div class="pointer-events-none">
+            <div class="font-bangers text-center text-stone-950 text-xs sm:text-sm leading-tight px-0.5">
+              ${card.title}
+            </div>
+            <div class="font-fredoka text-[8px] sm:text-[9px] text-stone-700 text-center italic leading-tight truncate">
+              ${card.subTitle}
+            </div>
+          </div>
+        `;
+
+        cardElem.addEventListener('mouseenter', () => {
+          sounds.hover();
+        });
+
+        cardElem.addEventListener('click', () => {
+          sounds.hover();
+          toggleSelectCard(card);
+        });
+
+        // Double-click to quick play if it's your turn
+        cardElem.addEventListener('dblclick', () => {
+          if (state.isMyTurn && state.turnState === 'NORMAL') {
+            selectedCards = [card];
+            playSelectedCards();
+          }
+        });
+
+        handContainer.appendChild(cardElem);
+      });
+
+      // 8. Update Play Button & Quick Combo Assistant
+      updatePlayButton();
+      updateComboAssistant(hand);
+
+      // 9. Check for Defuse required or Favor prompted
+      if (state.turnState === 'AWAITING_DEFUSE' && state.turnStateData?.targetSocketId === socket.id) {
+        showDefuseModal();
+      } else {
+        document.getElementById('modal-defuse').classList.add('hidden');
+      }
+
+      if (state.turnState === 'AWAITING_FAVOR' && state.turnStateData?.targetSocketId === socket.id) {
+        showFavorGiveModal(state.turnStateData.requesterName, state.myHand);
+      } else {
+        document.getElementById('modal-favor-give').classList.add('hidden');
+      }
+    }
+
+    // --- COMBO DETECTION LOGIC ---
+    function detectCombo(cards) {
+      if (!cards || cards.length === 0) {
+        return { valid: false, type: null, playLabel: 'PLAY CARD', desc: 'Select card(s) to play' };
+      }
+
+      // Single card
+      if (cards.length === 1) {
+        const c = cards[0];
+        if (c.category === 'cat') {
+          return {
+            valid: false,
+            type: 'CAT_SINGLE',
+            playLabel: 'NEEDS PAIR OR TRIO',
+            desc: 'Cat cards have no action alone. Match 2 for a random steal, or 3 for a named demand!'
+          };
+        }
+        return {
+          valid: true,
+          type: 'SINGLE',
+          playLabel: `PLAY ${c.title.split(' ')[0].toUpperCase()}`,
+          desc: c.subTitle || 'Play action card'
+        };
+      }
+
+      // 2 Cards: Pair (2-of-a-kind)
+      if (cards.length === 2) {
+        if (cards[0].type === cards[1].type) {
+          return {
+            valid: true,
+            type: 'PAIR',
+            playLabel: 'PLAY PAIR (STEAL RANDOM)',
+            desc: `2-of-a-Kind (${cards[0].title}s): Steal 1 random card from an opponent!`
+          };
+        }
+        return {
+          valid: false,
+          type: 'INVALID_PAIR',
+          playLabel: 'PAIR REQUIRES MATCHING CARDS',
+          desc: 'Both cards must be the exact same card type.'
+        };
+      }
+
+      // 3 Cards: Trio (3-of-a-kind)
+      if (cards.length === 3) {
+        if (cards[0].type === cards[1].type && cards[1].type === cards[2].type) {
+          return {
+            valid: true,
+            type: 'THREE_OF_A_KIND',
+            playLabel: 'PLAY 3-OF-A-KIND (DEMAND CARD)',
+            desc: `3-of-a-Kind (${cards[0].title}s): Name any card and demand it from an opponent!`
+          };
+        }
+        return {
+          valid: false,
+          type: 'INVALID_TRIO',
+          playLabel: 'TRIO REQUIRES 3 MATCHING CARDS',
+          desc: 'All 3 cards must be the exact same card type.'
+        };
+      }
+
+      // 5 Cards: 5 different cards discard pile retrieval
+      if (cards.length === 5) {
+        const uniqueTypes = new Set(cards.map((c) => c.type));
+        if (uniqueTypes.size === 5) {
+          return {
+            valid: true,
+            type: 'FIVE_DIFFERENT',
+            playLabel: 'PLAY 5-CARD COMBO (RECOVER)',
+            desc: '5 Unique Cards: Scavenge the Discard Pile and claim any card of your choice!'
+          };
+        }
+        return {
+          valid: false,
+          type: 'INVALID_FIVE',
+          playLabel: 'REQUIRES 5 UNIQUE CARDS',
+          desc: `You selected duplicates (${uniqueTypes.size}/5 unique). All 5 cards must be different!`
+        };
+      }
+
+      // 4 cards or > 5 cards
+      return {
+        valid: false,
+        type: 'INVALID_COUNT',
+        playLabel: `${cards.length} CARDS SELECTED`,
+        desc: 'Combos supported: 2 matching (pair), 3 matching (trio), or 5 unique cards.'
+      };
+    }
+
+    // --- CARD SELECTION & PLAY ---
+    function toggleSelectCard(card) {
+      if (!localGameState || !localGameState.isMyTurn) return;
+
+      const existingIdx = selectedCards.findIndex((c) => c.id === card.id);
+      if (existingIdx !== -1) {
+        selectedCards.splice(existingIdx, 1);
+      } else {
+        if (selectedCards.length >= 5) {
+          selectedCards.shift(); // keep max 5
+        }
+        selectedCards.push(card);
+      }
+
+      renderGameTable(localGameState);
+    }
+
+    function updatePlayButton() {
+      const btn = document.getElementById('btn-play-card');
+      const clearBtn = document.getElementById('btn-clear-selection');
+      const statusBar = document.getElementById('combo-status-bar');
+      const statusText = document.getElementById('combo-status-text');
+      const hintText = document.getElementById('combo-hint-text');
+
+      if (!clearBtn || !btn) return;
+
+      if (selectedCards.length > 0) {
+        clearBtn.classList.remove('hidden');
+        clearBtn.innerText = `CLEAR (${selectedCards.length})`;
+      } else {
+        clearBtn.classList.add('hidden');
+      }
+
+      if (!localGameState || !localGameState.isMyTurn) {
+        btn.disabled = true;
+        btn.innerText = 'PLAY CARD';
+        if (statusBar) statusBar.classList.add('hidden');
+        return;
+      }
+
+      if (selectedCards.length === 0) {
+        btn.disabled = true;
+        btn.innerText = 'PLAY CARD';
+        if (statusBar) statusBar.classList.add('hidden');
+        return;
+      }
+
+      const combo = detectCombo(selectedCards);
+
+      if (statusBar) {
+        statusBar.classList.remove('hidden');
+        if (combo.valid) {
+          statusBar.className = 'mx-2 px-3 py-1.5 rounded-xl bg-lime-500/20 border border-lime-500/40 text-lime-300 font-fredoka text-xs flex items-center justify-between animate-fade-in';
+          statusText.innerText = `✨ ${combo.desc}`;
+          hintText.innerText = 'READY TO PLAY';
+        } else {
+          statusBar.className = 'mx-2 px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-fredoka text-xs flex items-center justify-between animate-fade-in';
+          statusText.innerText = `⚠️ ${combo.desc}`;
+          hintText.innerText = 'INCOMPLETE';
+        }
+      }
+
+      btn.disabled = !combo.valid;
+      btn.innerText = combo.playLabel;
+    }
+
+    // Clear Selection Button
+    document.getElementById('btn-clear-selection').addEventListener('click', () => {
+      selectedCards = [];
+      if (localGameState) renderGameTable(localGameState);
+    });
+
+    // Auto-Sort Toggle Button
+    document.getElementById('btn-toggle-autosort').addEventListener('click', () => {
+      autoSortEnabled = !autoSortEnabled;
+      const badge = document.getElementById('autosort-status-badge');
+      if (badge) {
+        badge.innerText = autoSortEnabled ? 'ON' : 'OFF';
+        badge.className = autoSortEnabled ? 'text-lime-400 font-bold' : 'text-stone-400 font-bold';
+      }
+      if (autoSortEnabled && localGameState && localGameState.myHand) {
+        localGameState.myHand = sortHand(localGameState.myHand);
+        renderGameTable(localGameState);
+      }
+    });
+
+    // Manual Sort Button
+    document.getElementById('btn-manual-sort').addEventListener('click', () => {
+      if (localGameState && localGameState.myHand) {
+        localGameState.myHand = sortHand(localGameState.myHand);
+        renderGameTable(localGameState);
+      }
+    });
+
+    // Execute Play Card / Combo
+    document.getElementById('btn-play-card').addEventListener('click', () => {
+      if (!localGameState || !localGameState.isMyTurn || selectedCards.length === 0) return;
+
+      const combo = detectCombo(selectedCards);
+      if (!combo.valid) return;
+
+      // 1. Single Card
+      if (combo.type === 'SINGLE') {
+        const card = selectedCards[0];
+        if (card.type === 'FAVOR') {
+          showTargetModal(
+            'DEMAND A FAVOR',
+            'Choose an opponent who must surrender 1 card to you:',
+            (targetId) => {
+              socket.emit('play_card', {
+                roomId: currentRoomId,
+                cardId: card.id,
+                targetPlayerId: targetId,
+              });
+              selectedCards = [];
+              renderGameTable(localGameState);
+            }
+          );
+          return;
+        }
+
+        socket.emit('play_card', {
+          roomId: currentRoomId,
+          cardId: card.id,
+        });
+        selectedCards = [];
+        renderGameTable(localGameState);
+        return;
+      }
+
+      // 2. 2-of-a-Kind (Pair)
+      if (combo.type === 'PAIR') {
+        const cardTitle = selectedCards[0].title;
+        showTargetModal(
+          `PAIR OF ${cardTitle.toUpperCase()}S`,
+          'Select an opponent to steal 1 random card from:',
+          (targetId) => {
+            socket.emit('play_combo', {
+              roomId: currentRoomId,
+              comboType: 'PAIR',
+              cardIds: selectedCards.map((c) => c.id),
+              targetPlayerId: targetId,
+            });
+            selectedCards = [];
+            renderGameTable(localGameState);
+          }
+        );
+        return;
+      }
+
+      // 3. 3-of-a-Kind (Trio) - Targeted card demand
+      if (combo.type === 'THREE_OF_A_KIND') {
+        const cardTitle = selectedCards[0].title;
+        showTargetModal(
+          `3-OF-A-KIND (${cardTitle.toUpperCase()})`,
+          'Choose an opponent to target with your demand:',
+          (targetId) => {
+            showDemandModal(targetId, selectedCards);
+          }
+        );
+        return;
+      }
+
+      // 4. 5 Different Cards - Discard recovery
+      if (combo.type === 'FIVE_DIFFERENT') {
+        socket.emit('play_combo', {
+          roomId: currentRoomId,
+          comboType: 'FIVE_DIFFERENT',
+          cardIds: selectedCards.map((c) => c.id),
+        });
+        selectedCards = [];
+        renderGameTable(localGameState);
+        return;
+      }
+    });
+
+    function playSelectedCards() {
+      const playBtn = document.getElementById('btn-play-card');
+      if (playBtn && !playBtn.disabled) {
+        playBtn.click();
+      }
+    }
+
+    // Draw Deck Click Handler
+    document.getElementById('deck-container').addEventListener('click', () => {
+      if (!localGameState || !localGameState.isMyTurn || localGameState.turnState !== 'NORMAL') return;
+      sounds.cardDraw();
+      socket.emit('draw_card', { roomId: currentRoomId });
+    });
+
+    // Gauge Click for Danger Breakdown
+    document.getElementById('gauge-container').addEventListener('click', () => {
+      sounds.hover();
+      if (!localGameState) return;
+      const k = localGameState.kittensInDeck || 0;
+      const d = localGameState.deckCount || 0;
+      const pct = Math.round(localGameState.chanceOfKitten || 0);
+      showComboNotification('🎯 DANGER BREAKDOWN', `Live Risk: ${pct}% (${k} Exploding Kitten${k !== 1 ? 's' : ''} in ${d} remaining cards)`, '⚠️');
+    });
+
+    // --- MODAL HANDLERS ---
+    // Defuse Modal
+    function showDefuseModal() {
+      document.getElementById('modal-defuse').classList.remove('hidden');
+    }
+
+    document.querySelectorAll('.btn-place-kitten').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const pos = btn.getAttribute('data-pos');
+        socket.emit('defuse_kitten', { roomId: currentRoomId, position: pos });
+        document.getElementById('modal-defuse').classList.add('hidden');
+      });
+    });
+
+    const depthSlider = document.getElementById('slider-kitten-depth');
+    depthSlider.addEventListener('input', () => {
+      const val = parseInt(depthSlider.value);
+      document.getElementById('slider-depth-val').innerText = val === 0 ? '#1 (TOP)' : `#${val + 1}`;
+    });
+
+    document.getElementById('btn-place-slider').addEventListener('click', () => {
+      const val = parseInt(depthSlider.value);
+      socket.emit('defuse_kitten', { roomId: currentRoomId, position: val });
+      document.getElementById('modal-defuse').classList.add('hidden');
+    });
+
+    // See Future Modal
+    function showSeeFutureModal(cards) {
+      const grid = document.getElementById('see-future-cards-grid');
+      grid.innerHTML = '';
+      cards.forEach((c) => {
+        const el = document.createElement('div');
+        el.className = 'w-24 h-36 sm:w-28 sm:h-40 rounded-xl bg-white border-3 p-2 flex flex-col justify-between shadow-lg';
+        el.style.borderColor = c.badgeColor || '#000';
+        el.innerHTML = `
+          <div class="flex justify-between items-center">
+            <span class="font-bangers text-[10px] text-white px-1 rounded" style="background:${c.badgeColor}">${c.title.split(' ')[0]}</span>
+            ${getCardIcon(c.iconName)}
+          </div>
+          <div class="font-bangers text-stone-900 text-xs text-center leading-tight">${c.title}</div>
+          <div class="text-[9px] text-stone-500 italic text-center">${c.subTitle}</div>
+        `;
+        grid.appendChild(el);
+      });
+      document.getElementById('modal-see-future').classList.remove('hidden');
+    }
+    document.getElementById('btn-close-see-future').addEventListener('click', () => {
+      document.getElementById('modal-see-future').classList.add('hidden');
+    });
+
+    // Alter Future Modal
+    function showAlterFutureModal(cards) {
+      pendingAlterCards = [...cards];
+      renderAlterCards();
+      document.getElementById('modal-alter-future').classList.remove('hidden');
+    }
+
+    function renderAlterCards() {
+      const grid = document.getElementById('alter-future-cards-grid');
+      grid.innerHTML = '';
+      pendingAlterCards.forEach((c, idx) => {
+        const el = document.createElement('div');
+        el.className = 'flex flex-col items-center gap-1';
+        el.innerHTML = `
+          <div class="w-24 h-36 rounded-xl bg-white border-3 p-2 flex flex-col justify-between shadow-lg" style="border-color:${c.badgeColor}">
+            <div class="font-bangers text-[10px] text-stone-400">#${idx + 1} ${idx === 0 ? '(TOP)' : ''}</div>
+            <div class="font-bangers text-stone-900 text-xs text-center">${c.title}</div>
+            <div class="text-[9px] text-stone-500 italic text-center">${c.subTitle}</div>
+          </div>
+          <div class="flex gap-1 mt-1">
+            ${idx > 0 ? `<button class="px-2 py-0.5 bg-stone-800 rounded text-xs hover:bg-stone-700" onclick="swapAlter(${idx}, ${idx - 1})">◀</button>` : ''}
+            ${idx < pendingAlterCards.length - 1 ? `<button class="px-2 py-0.5 bg-stone-800 rounded text-xs hover:bg-stone-700" onclick="swapAlter(${idx}, ${idx + 1})">▶</button>` : ''}
+          </div>
+        `;
+        grid.appendChild(el);
+      });
+    }
+
+    window.swapAlter = function(a, b) {
+      const temp = pendingAlterCards[a];
+      pendingAlterCards[a] = pendingAlterCards[b];
+      pendingAlterCards[b] = temp;
+      renderAlterCards();
+    };
+
+    document.getElementById('btn-confirm-alter-future').addEventListener('click', () => {
+      socket.emit('reorder_future', {
+        roomId: currentRoomId,
+        cardIds: pendingAlterCards.map((c) => c.id),
+      });
+      document.getElementById('modal-alter-future').classList.add('hidden');
+    });
+
+    // Target Selection Modal
+    function showTargetModal(title, desc, callback) {
+      document.getElementById('target-modal-title').innerText = title;
+      document.getElementById('target-modal-desc').innerText = desc;
+      const grid = document.getElementById('target-players-grid');
+      grid.innerHTML = '';
+
+      localGameState.players.forEach((p) => {
+        if (p.id === localGameState.myId || p.isDead || p.cardCount === 0) return;
+
+        const btn = document.createElement('button');
+        btn.className = 'comic-btn flex items-center gap-3 p-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-left';
+        btn.innerHTML = `
+          <div class="w-10 h-10 rounded-full overflow-hidden border border-stone-600 bg-stone-900">
+            ${getAvatarSVG(p.avatarId)}
+          </div>
+          <div>
+            <div class="font-bangers text-yellow-300 text-sm">${p.name}</div>
+            <div class="font-fredoka text-xs text-stone-400">${p.cardCount} cards</div>
+          </div>
+        `;
+        btn.addEventListener('click', () => {
+          document.getElementById('modal-target-select').classList.add('hidden');
+          callback(p.id);
+        });
+        grid.appendChild(btn);
+      });
+
+      document.getElementById('modal-target-select').classList.remove('hidden');
+    }
+    document.getElementById('btn-cancel-target').addEventListener('click', () => {
+      document.getElementById('modal-target-select').classList.add('hidden');
+    });
+
+    // Favor Surrender Modal
+    function showFavorGiveModal(requesterName, hand) {
+      document.getElementById('favor-give-desc').innerText = `${requesterName} played a Favor card. Choose 1 card from your hand to surrender:`;
+      const grid = document.getElementById('favor-give-hand-grid');
+      grid.innerHTML = '';
+
+      hand.forEach((card) => {
+        const btn = document.createElement('button');
+        btn.className = 'comic-btn w-20 h-28 rounded-xl bg-white border-2 p-1.5 flex flex-col justify-between text-left hover:scale-105';
+        btn.style.borderColor = card.badgeColor || '#000';
+        btn.innerHTML = `
+          <div class="font-bangers text-[9px] text-white px-1 rounded truncate" style="background:${card.badgeColor}">${card.title.split(' ')[0]}</div>
+          <div class="font-bangers text-stone-900 text-[11px] text-center leading-tight">${card.title}</div>
+          <div class="text-[8px] text-stone-500 italic text-center">${card.subTitle}</div>
+        `;
+        btn.addEventListener('click', () => {
+          socket.emit('favor_give', { roomId: currentRoomId, cardId: card.id });
+          document.getElementById('modal-favor-give').classList.add('hidden');
+        });
+        grid.appendChild(btn);
+      });
+
+      document.getElementById('modal-favor-give').classList.remove('hidden');
+    }
+
+    // 3-of-a-Kind Targeted Demand Modal
+    function showDemandModal(targetId, cards) {
+      pendingDemandTargetId = targetId;
+      pendingDemandCards = [...cards];
+
+      const targetPlayer = (localGameState?.players || []).find((p) => p.id === targetId);
+      document.getElementById('demand-target-player-name').innerText = targetPlayer ? targetPlayer.name : 'Opponent';
+
+      const grid = document.getElementById('demand-card-options-grid');
+      grid.innerHTML = '';
+
+      ALL_CARD_TYPES.forEach((item) => {
+        const btn = document.createElement('button');
+        btn.className = 'comic-btn p-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 border-2 text-left flex items-center gap-2.5 transition-all cursor-pointer';
+        btn.style.borderColor = item.color;
+        btn.innerHTML = `
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-stone-950 border border-stone-700 shrink-0">
+            ${getCardIcon(item.icon)}
+          </div>
+          <div class="overflow-hidden">
+            <div class="font-bangers text-xs sm:text-sm text-yellow-300 truncate">${item.title}</div>
+            <div class="font-fredoka text-[9px] text-stone-400 truncate">${item.desc}</div>
+          </div>
+        `;
+        btn.addEventListener('click', () => {
+          socket.emit('play_combo', {
+            roomId: currentRoomId,
+            comboType: 'THREE_OF_A_KIND',
+            cardIds: pendingDemandCards.map((c) => c.id),
+            targetPlayerId: pendingDemandTargetId,
+            demandedCardType: item.type,
+          });
+          document.getElementById('modal-demand-card').classList.add('hidden');
+          selectedCards = [];
+          pendingDemandCards = [];
+          pendingDemandTargetId = null;
+          if (localGameState) renderGameTable(localGameState);
+        });
+        grid.appendChild(btn);
+      });
+
+      document.getElementById('modal-demand-card').classList.remove('hidden');
+    }
+
+    document.getElementById('btn-cancel-demand').addEventListener('click', () => {
+      document.getElementById('modal-demand-card').classList.add('hidden');
+      pendingDemandCards = [];
+      pendingDemandTargetId = null;
+    });
+
+    // 5-Card Combo Discard Pile Recovery Modal
+    function showDiscardBrowserModal(discardPile) {
+      const modal = document.getElementById('modal-discard-browser');
+      const grid = document.getElementById('discard-browser-grid');
+      const emptyMsg = document.getElementById('discard-empty-msg');
+      grid.innerHTML = '';
+
+      const eligible = (discardPile || []).filter((c) => c.type !== 'EXPLODING_KITTEN');
+      if (eligible.length === 0) {
+        emptyMsg.classList.remove('hidden');
+      } else {
+        emptyMsg.classList.add('hidden');
+        eligible.forEach((card) => {
+          const cardElem = document.createElement('div');
+          cardElem.className = 'w-24 h-36 sm:w-28 sm:h-42 rounded-xl bg-white border-3 p-2 flex flex-col justify-between shadow-lg cursor-pointer hover:scale-105 hover:shadow-xl transition-all';
+          cardElem.style.borderColor = card.badgeColor || '#000';
+          cardElem.innerHTML = `
+            <div class="flex justify-between items-center">
+              <span class="font-bangers text-[9px] text-white px-1.5 py-0.5 rounded truncate" style="background:${card.badgeColor}">
+                ${card.title.split(' ')[0]}
+              </span>
+              ${getCardIcon(card.iconName)}
+            </div>
+            <div class="font-bangers text-stone-900 text-xs text-center leading-tight">${card.title}</div>
+            <div class="font-fredoka text-[9px] text-stone-600 italic text-center leading-tight">${card.subTitle}</div>
+          `;
+          cardElem.addEventListener('click', () => {
+            socket.emit('select_discard_card', {
+              roomId: currentRoomId,
+              cardId: card.id,
+            });
+            modal.classList.add('hidden');
+          });
+          grid.appendChild(cardElem);
+        });
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    // Dynamic Floating Combo Toast Notification
+    function showComboNotification(title, desc, icon = '✨') {
+      const toast = document.getElementById('combo-alert-toast');
+      if (!toast) return;
+
+      document.getElementById('combo-alert-title').innerText = title;
+      document.getElementById('combo-alert-desc').innerText = desc;
+      document.getElementById('combo-alert-icon').innerText = icon;
+
+      toast.classList.remove('opacity-0', '-translate-y-4');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', '-translate-y-4');
+      }, 4000);
+    }
+
+    // Game Over Modal
+    function showGameOverModal(data) {
+      const isWinner = data.winnerId === socket.id;
+      if (isWinner) sounds.victory();
+
+      document.getElementById('game-over-icon').innerText = isWinner ? '👑' : '💥';
+      document.getElementById('game-over-title').innerText = isWinner ? 'VICTORY!' : 'GAME OVER';
+      document.getElementById('game-over-subtitle').innerText = `${data.winnerName} won the match!`;
+
+      document.getElementById('stat-turns').innerText = data.stats?.turnsPlayed || 0;
+      document.getElementById('stat-defused').innerText = data.stats?.kittensDefused || 0;
+      document.getElementById('stat-attacks').innerText = data.stats?.attacksPlayed || 0;
+      document.getElementById('stat-stolen').innerText = data.stats?.cardsStolen || 0;
+
+      document.getElementById('modal-game-over').classList.remove('hidden');
+    }
+    document.getElementById('btn-return-lobby').addEventListener('click', () => {
+      document.getElementById('modal-game-over').classList.add('hidden');
+      showScreen('lobby');
+    });
+    document.getElementById('btn-game-over-menu').addEventListener('click', () => {
+      document.getElementById('modal-game-over').classList.add('hidden');
+      if (socket && currentRoomId) {
+        socket.emit('leave_room', { roomId: currentRoomId });
+      }
+      showScreen('menu');
+    });
+
+    // Visual Explosion Flash & Shake
+    function triggerExplosionVisual() {
+      sounds.explosion();
+      const flash = document.getElementById('explosion-flash');
+      flash.classList.remove('hidden');
+      document.getElementById('screen-game').classList.add('animate-shake');
+
+      setTimeout(() => {
+        flash.classList.add('hidden');
+        document.getElementById('screen-game').classList.remove('animate-shake');
+      }, 700);
+    }
+
+    // In-game Emote Speech Bubbles
+    document.querySelectorAll('.btn-emote').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const emote = btn.getAttribute('data-emote');
+        if (socket && currentRoomId) {
+          socket.emit('send_chat', { roomId: currentRoomId, emote });
+        }
+      });
+    });
+
+    function showFloatingChat(senderId, text) {
+      sounds.emote();
+      const targetElem = document.getElementById(`opp-box-${senderId}`) || document.getElementById('player-status-badge');
+      if (!targetElem) return;
+
+      const bubble = document.createElement('div');
+      bubble.className = 'absolute -top-8 left-1/2 -translate-x-1/2 bg-yellow-300 text-stone-950 font-bangers text-xs sm:text-sm px-2.5 py-0.5 rounded-xl border-2 border-stone-950 shadow-2xl animate-pop z-50 whitespace-nowrap';
+      bubble.innerText = text;
+      targetElem.appendChild(bubble);
+
+      setTimeout(() => bubble.remove(), 2600);
+    }
+
+    // --- TABLE CHRONICLES RENDERER (LIVE FEED & ROUND HISTORY) ---
+    function renderChronicles(state) {
+      const liveTabBtn = document.getElementById('tab-btn-live');
+      const roundsTabBtn = document.getElementById('tab-btn-rounds');
+      const liveView = document.getElementById('chronicles-live-view');
+      const roundsView = document.getElementById('chronicles-rounds-view');
+
+      // Update mobile unread badge
+      const totalLogs = (state.actionLog || []).length;
+      if (totalLogs > lastSeenActionCount) {
+        const unread = totalLogs - lastSeenActionCount;
+        const unreadBadge = document.getElementById('mobile-unread-count');
+        if (unreadBadge) unreadBadge.innerText = unread > 9 ? '9+' : unread;
+      }
+
+      // Tab switcher clicks
+      liveTabBtn.onclick = () => {
+        activeChroniclesTab = 'live';
+        liveTabBtn.className = 'flex-1 py-1 rounded-md font-bangers text-xs tracking-wider transition-all bg-amber-900 text-amber-100 shadow cursor-pointer';
+        roundsTabBtn.className = 'flex-1 py-1 rounded-md font-bangers text-xs tracking-wider transition-all text-amber-950 hover:bg-amber-800/20 cursor-pointer';
+        liveView.classList.remove('hidden');
+        roundsView.classList.add('hidden');
+        sounds.hover();
+      };
+
+      roundsTabBtn.onclick = () => {
+        activeChroniclesTab = 'rounds';
+        roundsTabBtn.className = 'flex-1 py-1 rounded-md font-bangers text-xs tracking-wider transition-all bg-amber-900 text-amber-100 shadow cursor-pointer';
+        liveTabBtn.className = 'flex-1 py-1 rounded-md font-bangers text-xs tracking-wider transition-all text-amber-950 hover:bg-amber-800/20 cursor-pointer';
+        roundsView.classList.remove('hidden');
+        liveView.classList.add('hidden');
+        sounds.hover();
+        renderRoundPlaysList(state);
+      };
+
+      // 1. Render Live Activity Feed
+      const logContainer = document.getElementById('action-log-list');
+      logContainer.innerHTML = '';
+      const logs = state.actionLog || [];
+      if (logs.length === 0) {
+        logContainer.innerHTML = '<div class="text-stone-500 italic p-1">No action yet this match.</div>';
+      } else {
+        logs.forEach((item) => {
+          const row = document.createElement('div');
+          row.className = 'flex items-start gap-1.5 p-1 rounded-lg bg-amber-900/5 hover:bg-amber-900/10 border-b border-amber-900/10 transition-colors';
+          row.innerHTML = `
+            <span class="text-[10px] text-amber-800/80 font-mono mt-0.5">${item.time || ''}</span>
+            <div class="flex-1 leading-tight">
+              <span class="font-bangers text-amber-950 text-xs">${item.playerName}:</span>
+              <span class="text-stone-800 text-[11px]">${item.message}</span>
+            </div>
+            ${item.cardType ? `<span class="shrink-0 scale-75 origin-right">${getCardIcon(CARD_TEMPLATES[item.cardType]?.iconName || 'laser')}</span>` : ''}
+          `;
+          logContainer.appendChild(row);
+        });
+      }
+
+      // 2. Render Round History Pills & Content
+      renderRoundPills(state);
+      if (activeChroniclesTab === 'rounds') {
+        renderRoundPlaysList(state);
+      }
+
+      // Update mobile drawer content if open
+      renderMobileDrawer(state);
+    }
+
+    function renderRoundPills(state) {
+      const pillsContainer = document.getElementById('round-pills-selector');
+      if (!pillsContainer) return;
+      pillsContainer.innerHTML = '';
+
+      const rounds = state.roundHistory || [{ round: 1, startTime: '', plays: [] }];
+      // Set default selected round to current if not set
+      if (!selectedRoundNumber || selectedRoundNumber > rounds.length) {
+        selectedRoundNumber = state.currentRound || rounds.length;
+      }
+
+      rounds.forEach((r) => {
+        const isCurrent = r.round === selectedRoundNumber;
+        const btn = document.createElement('button');
+        btn.className = `px-2 py-0.5 rounded-md font-bangers text-[10px] cursor-pointer transition-all ${
+          isCurrent
+            ? 'bg-amber-800 text-yellow-200 shadow-sm border border-amber-950 scale-105'
+            : 'bg-amber-900/20 text-amber-950 hover:bg-amber-900/30'
+        }`;
+        btn.innerText = `R${r.round}${r.round === state.currentRound ? ' (NOW)' : ''}`;
+        btn.onclick = () => {
+          selectedRoundNumber = r.round;
+          sounds.hover();
+          renderRoundPills(state);
+          renderRoundPlaysList(state);
+        };
+        pillsContainer.appendChild(btn);
+      });
+    }
+
+    function renderRoundPlaysList(state) {
+      const playsContainer = document.getElementById('round-plays-list');
+      if (!playsContainer) return;
+      playsContainer.innerHTML = '';
+
+      const rounds = state.roundHistory || [];
+      const currentRoundObj = rounds.find((r) => r.round === selectedRoundNumber) || rounds[rounds.length - 1];
+
+      if (!currentRoundObj || !currentRoundObj.plays || currentRoundObj.plays.length === 0) {
+        playsContainer.innerHTML = `
+          <div class="p-2 text-center text-amber-900/70 italic text-xs">
+            Round ${selectedRoundNumber} is in progress! Awaiting moves...
+          </div>
+        `;
+        return;
+      }
+
+      // Summary badge for this round
+      const plays = currentRoundObj.plays;
+      const cardsPlayedCount = plays.filter((p) => p.action.startsWith('PLAY') || p.action.startsWith('COMBO')).length;
+      const defusesCount = plays.filter((p) => p.action === 'DEFUSE').length;
+      const drawsCount = plays.filter((p) => p.action === 'DRAW').length;
+
+      const summary = document.createElement('div');
+      summary.className = 'flex items-center justify-between text-[10px] font-bangers text-amber-900 bg-amber-900/10 px-2 py-1 rounded-md mb-1';
+      summary.innerHTML = `
+        <span>⏱️ Began: ${currentRoundObj.startTime || 'Start'}</span>
+        <span>🃏 ${cardsPlayedCount} Played</span>
+        <span>📥 ${drawsCount} Draws</span>
+        ${defusesCount > 0 ? `<span class="text-green-700">🛡️ ${defusesCount} Defused</span>` : ''}
+      `;
+      playsContainer.appendChild(summary);
+
+      plays.forEach((play) => {
+        const item = document.createElement('div');
+        item.className = 'p-1.5 rounded-lg bg-amber-950/5 border border-amber-900/10 flex items-start gap-1.5 hover:bg-amber-900/10 transition-colors';
+
+        let actionTag = '';
+        if (play.action === 'DEFUSE') actionTag = '<span class="px-1 py-0.2 rounded bg-green-700 text-white font-bangers text-[9px]">🛡️ DEFUSED</span>';
+        else if (play.action === 'EXPLODE') actionTag = '<span class="px-1 py-0.2 rounded bg-red-700 text-white font-bangers text-[9px]">💥 BOOM!</span>';
+        else if (play.action === 'COMBO_TRIO') actionTag = '<span class="px-1 py-0.2 rounded bg-fuchsia-700 text-white font-bangers text-[9px]">🎯 3-OF-KIND</span>';
+        else if (play.action === 'COMBO_PAIR') actionTag = '<span class="px-1 py-0.2 rounded bg-yellow-600 text-white font-bangers text-[9px]">😼 PAIR</span>';
+        else if (play.action === 'COMBO_5_DIFF') actionTag = '<span class="px-1 py-0.2 rounded bg-emerald-700 text-white font-bangers text-[9px]">✨ 5-SCAVENGER</span>';
+        else if (play.action === 'DRAW') actionTag = '<span class="px-1 py-0.2 rounded bg-stone-700 text-stone-200 font-bangers text-[9px]">📥 DRAW</span>';
+        else if (play.action === 'PLAY_CARD') actionTag = '<span class="px-1 py-0.2 rounded bg-amber-700 text-white font-bangers text-[9px]">🃏 PLAY</span>';
+
+        let cardBadgeHTML = '';
+        if (play.card) {
+          cardBadgeHTML = `<span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bangers text-white shadow-xs" style="background-color:${play.card.badgeColor || '#444'}">${getCardIcon(play.card.iconName)} ${play.card.title}</span>`;
+        } else if (play.cards && play.cards.length > 0) {
+          cardBadgeHTML = `<span class="inline-flex items-center gap-0.5 flex-wrap">` + play.cards.map(c => `<span class="px-1 py-0.2 rounded text-[8px] font-bangers text-white" style="background-color:${c.badgeColor || '#444'}">${c.title.split(' ')[0]}</span>`).join('') + `</span>`;
+        }
+
+        item.innerHTML = `
+          <div class="w-6 h-6 rounded-full overflow-hidden shrink-0 mt-0.5 border border-amber-900/30">
+            ${getAvatarSVG(play.playerAvatar)}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1 flex-wrap">
+              <span class="font-bangers text-xs text-amber-950">${play.playerName}</span>
+              ${actionTag}
+              ${cardBadgeHTML}
+              ${play.targetName ? `<span class="text-[10px] text-amber-800 font-fredoka font-semibold">➔ ${play.targetName}</span>` : ''}
+              <span class="ml-auto text-[9px] text-amber-800/60 font-mono">${play.time}</span>
+            </div>
+            <div class="text-[11px] text-stone-800 font-fredoka leading-snug mt-0.5">
+              ${play.details}
+            </div>
+          </div>
+        `;
+        playsContainer.appendChild(item);
+      });
+    }
+
+    let mobileActiveTab = 'live'; // 'live' | 'rounds'
+    let mobileSelectedRound = 1;
+
+    function renderMobileDrawer(state) {
+      const drawerContent = document.getElementById('mobile-drawer-content');
+      const roundPills = document.getElementById('mobile-round-pills-selector');
+      if (!drawerContent) return;
+      document.getElementById('mobile-drawer-round').innerText = `R${state.currentRound || 1}`;
+
+      const tabLive = document.getElementById('mobile-tab-live');
+      const tabRounds = document.getElementById('mobile-tab-rounds');
+
+      if (mobileActiveTab === 'live') {
+        tabLive.className = 'flex-1 py-1 rounded-lg font-bangers text-xs bg-amber-900 text-amber-100 cursor-pointer transition-all shadow';
+        tabRounds.className = 'flex-1 py-1 rounded-lg font-bangers text-xs text-stone-300 hover:text-white cursor-pointer transition-all';
+        if (roundPills) roundPills.classList.add('hidden');
+
+        drawerContent.innerHTML = '';
+        const logs = state.actionLog || [];
+        if (logs.length === 0) {
+          drawerContent.innerHTML = '<div class="text-stone-400 italic p-3 text-center">No actions recorded yet.</div>';
+        } else {
+          logs.forEach((item) => {
+            const row = document.createElement('div');
+            row.className = 'p-2 rounded-xl bg-black/50 border border-stone-800 flex items-start gap-2 text-xs';
+            row.innerHTML = `
+              <div class="w-6 h-6 rounded-full overflow-hidden shrink-0 mt-0.5 border border-stone-700">
+                ${getAvatarSVG(item.playerAvatar)}
+              </div>
+              <div class="flex-1">
+                <div class="flex items-center justify-between">
+                  <b class="text-amber-300 font-bangers">${item.playerName}</b>
+                  <span class="text-[10px] text-stone-500 font-mono">${item.time}</span>
+                </div>
+                <div class="text-stone-200 font-fredoka leading-tight">${item.message}</div>
+              </div>
+            `;
+            drawerContent.appendChild(row);
+          });
+        }
+      } else {
+        tabRounds.className = 'flex-1 py-1 rounded-lg font-bangers text-xs bg-amber-900 text-amber-100 cursor-pointer transition-all shadow';
+        tabLive.className = 'flex-1 py-1 rounded-lg font-bangers text-xs text-stone-300 hover:text-white cursor-pointer transition-all';
+        if (roundPills) {
+          roundPills.classList.remove('hidden');
+          roundPills.innerHTML = '';
+          const rounds = state.roundHistory || [{ round: 1, startTime: '', plays: [] }];
+          if (!mobileSelectedRound || mobileSelectedRound > rounds.length) {
+            mobileSelectedRound = state.currentRound || rounds.length;
+          }
+          rounds.forEach((r) => {
+            const isCurr = r.round === mobileSelectedRound;
+            const btn = document.createElement('button');
+            btn.className = `px-2 py-0.5 rounded-md font-bangers text-[10px] cursor-pointer transition-all ${
+              isCurr ? 'bg-amber-600 text-stone-950 font-bold' : 'bg-stone-800 text-stone-300'
+            }`;
+            btn.innerText = `R${r.round}${r.round === state.currentRound ? ' (NOW)' : ''}`;
+            btn.onclick = () => {
+              mobileSelectedRound = r.round;
+              sounds.hover();
+              renderMobileDrawer(state);
+            };
+            roundPills.appendChild(btn);
+          });
+        }
+
+        drawerContent.innerHTML = '';
+        const rounds = state.roundHistory || [];
+        const currentRoundObj = rounds.find((r) => r.round === mobileSelectedRound) || rounds[rounds.length - 1];
+
+        if (!currentRoundObj || !currentRoundObj.plays || currentRoundObj.plays.length === 0) {
+          drawerContent.innerHTML = `<div class="p-3 text-center text-stone-400 italic text-xs">Round ${mobileSelectedRound} is in progress...</div>`;
+          return;
+        }
+
+        const plays = currentRoundObj.plays;
+        plays.forEach((play) => {
+          const item = document.createElement('div');
+          item.className = 'p-2 rounded-xl bg-black/50 border border-stone-800 flex items-start gap-2 text-xs';
+
+          let actionTag = '';
+          if (play.action === 'DEFUSE') actionTag = '<span class="px-1 py-0.2 rounded bg-green-700 text-white font-bangers text-[9px]">🛡️ DEFUSED</span>';
+          else if (play.action === 'EXPLODE') actionTag = '<span class="px-1 py-0.2 rounded bg-red-700 text-white font-bangers text-[9px]">💥 BOOM!</span>';
+          else if (play.action === 'COMBO_TRIO') actionTag = '<span class="px-1 py-0.2 rounded bg-fuchsia-700 text-white font-bangers text-[9px]">🎯 3-OF-KIND</span>';
+          else if (play.action === 'COMBO_PAIR') actionTag = '<span class="px-1 py-0.2 rounded bg-yellow-600 text-white font-bangers text-[9px]">😼 PAIR</span>';
+          else if (play.action === 'COMBO_5_DIFF') actionTag = '<span class="px-1 py-0.2 rounded bg-emerald-700 text-white font-bangers text-[9px]">✨ 5-SCAVENGER</span>';
+          else if (play.action === 'DRAW') actionTag = '<span class="px-1 py-0.2 rounded bg-stone-700 text-stone-200 font-bangers text-[9px]">📥 DRAW</span>';
+          else if (play.action === 'PLAY_CARD') actionTag = '<span class="px-1 py-0.2 rounded bg-amber-700 text-white font-bangers text-[9px]">🃏 PLAY</span>';
+
+          item.innerHTML = `
+            <div class="w-6 h-6 rounded-full overflow-hidden shrink-0 mt-0.5 border border-stone-700">
+              ${getAvatarSVG(play.playerAvatar)}
+            </div>
+            <div class="flex-1">
+              <div class="flex items-center gap-1 flex-wrap">
+                <span class="font-bangers text-amber-300">${play.playerName}</span>
+                ${actionTag}
+                ${play.card ? `<span class="px-1 py-0.2 rounded text-[8px] font-bangers text-white" style="background-color:${play.card.badgeColor || '#444'}">${play.card.title}</span>` : ''}
+                <span class="ml-auto text-[9px] text-stone-400 font-mono">${play.time}</span>
+              </div>
+              <div class="text-stone-200 font-fredoka leading-snug mt-0.5">${play.details}</div>
+            </div>
+          `;
+          drawerContent.appendChild(item);
+        });
+      }
+    }
+
+    // --- QUICK COMBO ASSISTANT ---
+    function updateComboAssistant(hand) {
+      const statusBar = document.getElementById('combo-status-bar');
+      if (!statusBar) return;
+
+      if (!localGameState || !localGameState.isMyTurn || selectedCards.length > 0) {
+        return; // Normal updatePlayButton handles selected cards
+      }
+
+      // Tally card types in hand
+      const typeMap = {};
+      hand.forEach((c) => {
+        typeMap[c.type] = typeMap[c.type] || [];
+        typeMap[c.type].push(c);
+      });
+
+      const trios = Object.keys(typeMap).filter((k) => typeMap[k].length >= 3);
+      const pairs = Object.keys(typeMap).filter((k) => typeMap[k].length >= 2);
+      const uniqueTypes = Object.keys(typeMap);
+
+      if (trios.length > 0 || pairs.length > 0 || uniqueTypes.length >= 5) {
+        statusBar.classList.remove('hidden');
+        statusBar.className = 'mx-2 px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-fredoka text-xs flex flex-wrap items-center justify-between gap-1.5 animate-fade-in';
+
+        let buttonsHTML = '<div class="flex items-center gap-1.5 flex-wrap"><span class="font-bangers text-yellow-300">⚡ QUICK COMBOS:</span>';
+
+        if (trios.length > 0) {
+          const tType = trios[0];
+          const title = typeMap[tType][0].title.split(' ')[0];
+          buttonsHTML += `<button id="btn-quick-trio" class="comic-btn px-2 py-0.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bangers text-[11px] cursor-pointer">🎯 Auto-Select Trio (${title})</button>`;
+        }
+        if (pairs.length > 0) {
+          const pType = pairs[0];
+          const title = typeMap[pType][0].title.split(' ')[0];
+          buttonsHTML += `<button id="btn-quick-pair" class="comic-btn px-2 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-stone-950 font-bangers text-[11px] cursor-pointer">😼 Auto-Select Pair (${title})</button>`;
+        }
+        if (uniqueTypes.length >= 5) {
+          buttonsHTML += `<button id="btn-quick-5diff" class="comic-btn px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bangers text-[11px] cursor-pointer">✨ Auto-Select 5 Distinct</button>`;
+        }
+
+        buttonsHTML += '</div><span class="text-[10px] text-amber-200/70">Click to load</span>';
+        statusBar.innerHTML = buttonsHTML;
+
+        // Attach listeners
+        const btnTrio = document.getElementById('btn-quick-trio');
+        if (btnTrio) {
+          btnTrio.onclick = () => {
+            sounds.combo();
+            selectedCards = typeMap[trios[0]].slice(0, 3);
+            renderGameTable(localGameState);
+          };
+        }
+        const btnPair = document.getElementById('btn-quick-pair');
+        if (btnPair) {
+          btnPair.onclick = () => {
+            sounds.combo();
+            selectedCards = typeMap[pairs[0]].slice(0, 2);
+            renderGameTable(localGameState);
+          };
+        }
+        const btn5 = document.getElementById('btn-quick-5diff');
+        if (btn5) {
+          btn5.onclick = () => {
+            sounds.combo();
+            const picked = [];
+            const seen = new Set();
+            for (const c of hand) {
+              if (!seen.has(c.type)) {
+                seen.add(c.type);
+                picked.push(c);
+                if (picked.length === 5) break;
+              }
+            }
+            selectedCards = picked;
+            renderGameTable(localGameState);
+          };
+        }
+      } else {
+        statusBar.classList.add('hidden');
+      }
+    }
+
+    // --- DISCARD GRAVEYARD MODAL ---
+    document.getElementById('discard-container').addEventListener('click', () => {
+      sounds.hover();
+      showDiscardGraveyardModal();
+    });
+
+    document.getElementById('btn-close-graveyard').addEventListener('click', () => {
+      document.getElementById('modal-discard-graveyard').classList.add('hidden');
+    });
+
+    function showDiscardGraveyardModal() {
+      const modal = document.getElementById('modal-discard-graveyard');
+      const list = document.getElementById('graveyard-cards-list');
+      const stats = document.getElementById('graveyard-stats');
+      modal.classList.remove('hidden');
+
+      const pile = (localGameState && localGameState.discardPile) || [];
+      stats.innerHTML = `
+        <span class="px-2 py-0.5 rounded-full bg-stone-800 border border-stone-700">TOTAL DISCARDED: ${pile.length}</span>
+        <span class="px-2 py-0.5 rounded-full bg-red-950 text-red-300 border border-red-800">DEFUSES USED: ${pile.filter(c => c.type === 'DEFUSE').length}</span>
+      `;
+
+      list.innerHTML = '';
+      if (pile.length === 0) {
+        list.innerHTML = '<div class="col-span-full p-6 text-stone-400 font-fredoka text-sm italic">The discard pile is completely empty!</div>';
+        return;
+      }
+
+      // Display in reverse chronological order
+      [...pile].reverse().forEach((card) => {
+        const item = document.createElement('div');
+        item.className = 'p-2 rounded-xl bg-stone-900 border-2 border-stone-800 flex flex-col justify-between text-left text-xs';
+        item.style.borderColor = card.badgeColor || '#444';
+        item.innerHTML = `
+          <div class="flex items-center justify-between mb-1">
+            <span class="font-bangers text-[10px] px-1 py-0.2 rounded text-white" style="background-color:${card.badgeColor}">${card.title.split(' ')[0]}</span>
+            ${getCardIcon(card.iconName)}
+          </div>
+          <div class="font-bangers text-stone-100 text-xs truncate">${card.title}</div>
+          <div class="text-[9px] text-stone-400 font-fredoka truncate">${card.subTitle}</div>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    // --- AUDIO & MUSIC SETTINGS MODAL & BGM CONTROL ---
+    document.getElementById('btn-toggle-bgm').addEventListener('click', () => {
+      const active = sounds.toggleBgm();
+      document.getElementById('bgm-icon').innerText = active ? '🎵' : '🔇';
+    });
+
+    document.getElementById('btn-audio-settings').addEventListener('click', () => {
+      sounds.hover();
+      document.getElementById('modal-audio-settings').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-close-audio-settings').addEventListener('click', () => {
+      document.getElementById('modal-audio-settings').classList.add('hidden');
+    });
+
+    // Volume sliders
+    document.getElementById('slider-bgm-volume').addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      document.getElementById('val-bgm-volume').innerText = `${val}%`;
+      sounds.setBgmVolume(val / 100);
+    });
+
+    document.getElementById('slider-sfx-volume').addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      document.getElementById('val-sfx-volume').innerText = `${val}%`;
+      sounds.setSfxVolume(val / 100);
+    });
+
+    // Track picker
+    document.querySelectorAll('.btn-track-pick').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const track = btn.getAttribute('data-track');
+        sounds.setTrack(track);
+        sounds.hover();
+
+        document.querySelectorAll('.btn-track-pick span[class*="track-tag-"]').forEach((tag) => {
+          tag.innerText = 'PLAY';
+          tag.className = tag.className.replace('text-lime-400', 'text-stone-500');
+        });
+
+        const activeTag = btn.querySelector(`span.track-tag-${track}`);
+        if (activeTag) {
+          activeTag.innerText = 'ACTIVE';
+          activeTag.className = activeTag.className.replace('text-stone-500', 'text-lime-400');
+        }
+      });
+    });
+
+    // --- EXPANDED CHRONICLES MODAL ---
+    document.getElementById('btn-expand-chronicles').addEventListener('click', () => {
+      sounds.hover();
+      showExpandedChroniclesModal();
+    });
+
+    document.getElementById('btn-close-expanded-chronicles').addEventListener('click', () => {
+      document.getElementById('modal-expanded-chronicles').classList.add('hidden');
+    });
+
+    let modalChroniclesTab = 'rounds'; // 'live' | 'rounds'
+
+    function renderExpandedChroniclesContent() {
+      const content = document.getElementById('modal-chronicles-content');
+      const tabLive = document.getElementById('modal-tab-live');
+      const tabRounds = document.getElementById('modal-tab-rounds');
+      if (!content) return;
+
+      if (modalChroniclesTab === 'live') {
+        tabLive.className = 'px-4 py-1.5 rounded-xl font-bangers text-sm bg-amber-900 text-amber-100 cursor-pointer shadow';
+        tabRounds.className = 'px-4 py-1.5 rounded-xl font-bangers text-sm bg-amber-800/20 text-amber-900 hover:bg-amber-800/30 cursor-pointer';
+
+        content.innerHTML = '';
+        const logs = (localGameState && localGameState.actionLog) || [];
+        if (logs.length === 0) {
+          content.innerHTML = '<div class="italic text-stone-500 text-sm p-4 text-center">No action log recorded yet.</div>';
+          return;
+        }
+        logs.forEach((item) => {
+          const row = document.createElement('div');
+          row.className = 'flex items-center gap-2 p-2 rounded-xl bg-amber-900/10 border border-amber-900/20 text-xs font-fredoka';
+          row.innerHTML = `
+            <div class="w-6 h-6 rounded-full overflow-hidden shrink-0 border border-amber-900/30">
+              ${getAvatarSVG(item.playerAvatar)}
+            </div>
+            <span class="text-stone-500 font-mono text-[10px] shrink-0">${item.time}</span>
+            <span class="font-bangers text-amber-950 text-sm">${item.playerName}:</span>
+            <span class="text-stone-800 flex-1">${item.message}</span>
+            ${item.cardType ? `<span class="shrink-0 scale-75">${getCardIcon(CARD_TEMPLATES[item.cardType]?.iconName || 'laser')}</span>` : ''}
+          `;
+          content.appendChild(row);
+        });
+      } else {
+        tabRounds.className = 'px-4 py-1.5 rounded-xl font-bangers text-sm bg-amber-900 text-amber-100 cursor-pointer shadow';
+        tabLive.className = 'px-4 py-1.5 rounded-xl font-bangers text-sm bg-amber-800/20 text-amber-900 hover:bg-amber-800/30 cursor-pointer';
+
+        content.innerHTML = '';
+        const rounds = (localGameState && localGameState.roundHistory) || [];
+        if (rounds.length === 0) {
+          content.innerHTML = '<div class="italic text-stone-500 text-sm p-4 text-center">No round history yet.</div>';
+          return;
+        }
+
+        rounds.forEach((roundObj) => {
+          const roundCard = document.createElement('div');
+          roundCard.className = 'p-3.5 rounded-2xl bg-amber-900/10 border-2 border-amber-900/30 mb-3 shadow-xs';
+
+          const plays = roundObj.plays || [];
+          const cardsPlayed = plays.filter((p) => p.action.startsWith('PLAY') || p.action.startsWith('COMBO')).length;
+          const draws = plays.filter((p) => p.action === 'DRAW').length;
+          const defuses = plays.filter((p) => p.action === 'DEFUSE').length;
+
+          let playsHTML = '';
+          plays.forEach((p) => {
+            let actionTag = '';
+            if (p.action === 'DEFUSE') actionTag = '<span class="px-1.5 py-0.5 rounded bg-green-700 text-white font-bangers text-[10px]">🛡️ DEFUSED</span>';
+            else if (p.action === 'EXPLODE') actionTag = '<span class="px-1.5 py-0.5 rounded bg-red-700 text-white font-bangers text-[10px]">💥 BOOM!</span>';
+            else if (p.action === 'COMBO_TRIO') actionTag = '<span class="px-1.5 py-0.5 rounded bg-fuchsia-700 text-white font-bangers text-[10px]">🎯 3-OF-KIND</span>';
+            else if (p.action === 'COMBO_PAIR') actionTag = '<span class="px-1.5 py-0.5 rounded bg-yellow-600 text-white font-bangers text-[10px]">😼 PAIR</span>';
+            else if (p.action === 'COMBO_5_DIFF') actionTag = '<span class="px-1.5 py-0.5 rounded bg-emerald-700 text-white font-bangers text-[10px]">✨ 5-SCAVENGER</span>';
+            else if (p.action === 'DRAW') actionTag = '<span class="px-1.5 py-0.5 rounded bg-stone-700 text-stone-200 font-bangers text-[10px]">📥 DRAW</span>';
+            else if (p.action === 'PLAY_CARD') actionTag = '<span class="px-1.5 py-0.5 rounded bg-amber-700 text-white font-bangers text-[10px]">🃏 PLAY</span>';
+
+            let cardBadge = '';
+            if (p.card) {
+              cardBadge = `<span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bangers text-white" style="background-color:${p.card.badgeColor || '#444'}">${getCardIcon(p.card.iconName)} ${p.card.title}</span>`;
+            } else if (p.cards && p.cards.length > 0) {
+              cardBadge = `<span class="inline-flex items-center gap-0.5 flex-wrap">` + p.cards.map(c => `<span class="px-1 py-0.2 rounded text-[8px] font-bangers text-white" style="background-color:${c.badgeColor || '#444'}">${c.title.split(' ')[0]}</span>`).join('') + `</span>`;
+            }
+
+            playsHTML += `
+              <div class="flex items-center gap-2 py-1.5 border-b border-amber-900/10 text-xs font-fredoka flex-wrap sm:flex-nowrap">
+                <span class="text-stone-500 font-mono text-[10px] shrink-0">${p.time}</span>
+                <div class="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-amber-900/30">
+                  ${getAvatarSVG(p.playerAvatar)}
+                </div>
+                <span class="font-bangers text-amber-950 text-sm">${p.playerName}:</span>
+                ${actionTag}
+                ${cardBadge}
+                ${p.targetName ? `<span class="text-amber-800 font-semibold text-[11px]">➔ ${p.targetName}</span>` : ''}
+                <span class="text-stone-800 flex-1">${p.details}</span>
+              </div>
+            `;
+          });
+
+          roundCard.innerHTML = `
+            <div class="flex flex-wrap items-center justify-between border-b border-amber-900/20 pb-2 mb-2 font-bangers text-sm text-amber-950 gap-2">
+              <div class="flex items-center gap-2">
+                <span>ROUND ${roundObj.round}</span>
+                <span class="text-[11px] text-amber-800/80 font-mono font-normal">(Started: ${roundObj.startTime || 'Match Start'})</span>
+              </div>
+              <div class="flex items-center gap-1.5 text-xs">
+                <span class="bg-amber-200/90 text-amber-950 px-2 py-0.5 rounded-full font-bangers">${cardsPlayed} Cards Played</span>
+                <span class="bg-amber-200/90 text-amber-950 px-2 py-0.5 rounded-full font-bangers">${draws} Draws</span>
+                ${defuses > 0 ? `<span class="bg-green-200 text-green-950 px-2 py-0.5 rounded-full font-bangers">🛡️ ${defuses} Defused</span>` : ''}
+              </div>
+            </div>
+            <div class="space-y-1">
+              ${playsHTML || '<div class="italic text-stone-500 text-xs py-1">No plays recorded yet in this round.</div>'}
+            </div>
+          `;
+          content.appendChild(roundCard);
+        });
+      }
+    }
+
+    document.getElementById('modal-tab-live').addEventListener('click', () => {
+      modalChroniclesTab = 'live';
+      sounds.hover();
+      renderExpandedChroniclesContent();
+    });
+
+    document.getElementById('modal-tab-rounds').addEventListener('click', () => {
+      modalChroniclesTab = 'rounds';
+      sounds.hover();
+      renderExpandedChroniclesContent();
+    });
+
+    function showExpandedChroniclesModal() {
+      const modal = document.getElementById('modal-expanded-chronicles');
+      modal.classList.remove('hidden');
+      renderExpandedChroniclesContent();
+    }
+
+    // --- MOBILE DRAWER HANDLERS & TABS ---
+    document.getElementById('btn-mobile-chronicles').addEventListener('click', () => {
+      sounds.hover();
+      lastSeenActionCount = (localGameState && localGameState.actionLog ? localGameState.actionLog.length : 0);
+      document.getElementById('mobile-unread-count').innerText = '0';
+      document.getElementById('mobile-chronicles-drawer').classList.remove('translate-y-full');
+      if (localGameState) renderMobileDrawer(localGameState);
+    });
+
+    document.getElementById('btn-close-mobile-drawer').addEventListener('click', () => {
+      document.getElementById('mobile-chronicles-drawer').classList.add('translate-y-full');
+    });
+
+    document.getElementById('mobile-tab-live').addEventListener('click', () => {
+      mobileActiveTab = 'live';
+      sounds.hover();
+      if (localGameState) renderMobileDrawer(localGameState);
+    });
+
+    document.getElementById('mobile-tab-rounds').addEventListener('click', () => {
+      mobileActiveTab = 'rounds';
+      sounds.hover();
+      if (localGameState) renderMobileDrawer(localGameState);
+    });
+
+    // --- LEAVE GAME DIALOG HANDLERS ---
+    document.getElementById('btn-leave-game').addEventListener('click', () => {
+      sounds.hover();
+      document.getElementById('modal-leave-confirm').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-cancel-leave').addEventListener('click', () => {
+      sounds.hover();
+      document.getElementById('modal-leave-confirm').classList.add('hidden');
+    });
+
+    document.getElementById('btn-confirm-leave').addEventListener('click', () => {
+      sounds.hover();
+      document.getElementById('modal-leave-confirm').classList.add('hidden');
+      if (socket && currentRoomId) {
+        socket.emit('leave_room', { roomId: currentRoomId });
+      }
+      showScreen('menu');
+    });
+
+    // Auto-unlock Web Audio on first user click anywhere
+    document.addEventListener('click', () => {
+      sounds.init();
+      if (sounds.bgmEnabled && !sounds.isPlayingBgm) {
+        sounds.startBgm();
+      }
+    }, { once: true });
+
+    // Keyboard Shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+
+      // Space = Draw Card
+      if (e.code === 'Space') {
+        e.preventDefault();
+        const deckContainer = document.getElementById('deck-container');
+        if (deckContainer && localGameState?.isMyTurn && localGameState?.turnState === 'NORMAL') {
+          deckContainer.click();
+        }
+      }
+      // Enter = Play Selected
+      else if (e.code === 'Enter') {
+        e.preventDefault();
+        const playBtn = document.getElementById('btn-play-card');
+        if (playBtn && !playBtn.disabled) playBtn.click();
+      }
+      // Escape = Clear Selection
+      else if (e.code === 'Escape') {
+        selectedCards = [];
+        if (localGameState) renderGameTable(localGameState);
+      }
+      // M = Toggle BGM
+      else if (e.code === 'KeyM') {
+        document.getElementById('btn-toggle-bgm').click();
+      }
+      // 1-9 = Select Card by index
+      else if (e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        const hand = localGameState?.myHand || [];
+        if (hand[idx]) {
+          toggleSelectCard(hand[idx]);
+        }
+      }
+    });
+
+    // Safe clipboard copier (works reliably in sandboxed iframes)
+    function copyTextSafely(text, label) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+          .then(() => {
+            showComboNotification('COPIED!', `${label} copied to clipboard!`, '📋');
+          })
+          .catch(() => {
+            fallbackCopy(text, label);
+          });
+      } else {
+        fallbackCopy(text, label);
+      }
+    }
+
+    function fallbackCopy(text, label) {
+      try {
+        const temp = document.createElement('textarea');
+        temp.value = text;
+        temp.style.position = 'fixed';
+        temp.style.left = '-9999px';
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand('copy');
+        document.body.removeChild(temp);
+        showComboNotification('COPIED!', `${label} copied to clipboard!`, '📋');
+      } catch (e) {
+        showComboNotification('CODE', `${label}: ${text}`, '📋');
+      }
+    }
+
+    // --- MENU BUTTON ATTACHMENTS ---
+    // 1. Host Party
+    document.getElementById('btn-host-party').addEventListener('click', () => {
+      initSocket();
+      const playerName = document.getElementById('user-name').value.trim() || 'Player 1';
+      const avatarId = document.getElementById('user-avatar').value;
+
+      socket.emit('create_room', { playerName, avatarId, isPrivate: true }, (res) => {
+        if (res.success) {
+          currentRoomId = res.roomId;
+          currentRoomCode = res.roomCode;
+          isRoomHost = true;
+          document.getElementById('game-room-tag').innerText = `ROOM: ${res.roomCode}`;
+          showScreen('lobby');
+        }
+      });
+    });
+
+    // 2. Join Party
+    document.getElementById('btn-join-party').addEventListener('click', () => {
+      initSocket();
+      const code = document.getElementById('input-join-code').value.trim();
+      const playerName = document.getElementById('user-name').value.trim() || 'Player 1';
+      const avatarId = document.getElementById('user-avatar').value;
+
+      if (!code) {
+        showComboNotification('ROOM CODE NEEDED', 'Please enter a 6-character room code (e.g. KTN-789)', '⚠️');
+        return;
+      }
+
+      socket.emit('join_room', { roomCode: code, playerName, avatarId }, (res) => {
+        if (res.success) {
+          currentRoomId = res.roomId;
+          currentRoomCode = res.roomCode;
+          isRoomHost = false;
+          document.getElementById('game-room-tag').innerText = `ROOM: ${res.roomCode}`;
+          showScreen('lobby');
+        } else {
+          showComboNotification('JOIN ERROR', `Could not join room: ${res.error}`, '❌');
+        }
+      });
+    });
+
+    // 3. Quick Match
+    document.getElementById('btn-quick-match').addEventListener('click', () => {
+      initSocket();
+      const playerName = document.getElementById('user-name').value.trim() || 'Guest';
+      const avatarId = document.getElementById('user-avatar').value;
+
+      socket.emit('quick_match', { playerName, avatarId }, (res) => {
+        if (res.success) {
+          currentRoomId = res.roomId;
+          currentRoomCode = res.roomCode;
+          isRoomHost = res.isHost;
+          document.getElementById('game-room-tag').innerText = `ROOM: ${res.roomCode}`;
+          showScreen('lobby');
+        }
+      });
+    });
+
+    // 4. Practice vs 3 Bots
+    document.getElementById('btn-practice-bots').addEventListener('click', () => {
+      initSocket();
+      const playerName = document.getElementById('user-name').value.trim() || 'Trainer';
+      const avatarId = document.getElementById('user-avatar').value;
+
+      socket.emit('create_room', { playerName, avatarId, isPrivate: true }, (res) => {
+        if (res.success) {
+          currentRoomId = res.roomId;
+          currentRoomCode = res.roomCode;
+          isRoomHost = true;
+          document.getElementById('game-room-tag').innerText = `ROOM: ${res.roomCode}`;
+
+          // Automatically add 3 AI bots and start immediately
+          socket.emit('add_bot', { roomId: res.roomId });
+          socket.emit('add_bot', { roomId: res.roomId });
+          socket.emit('add_bot', { roomId: res.roomId });
+
+          setTimeout(() => {
+            socket.emit('start_game', { roomId: res.roomId });
+          }, 300);
+        }
+      });
+    });
+
+    // 5. Lobby buttons
+    document.getElementById('btn-toggle-ready').addEventListener('click', () => {
+      if (socket && currentRoomId) {
+        socket.emit('toggle_ready', { roomId: currentRoomId });
+      }
+    });
+
+    document.getElementById('btn-start-game').addEventListener('click', () => {
+      if (socket && currentRoomId && isRoomHost) {
+        socket.emit('start_game', { roomId: currentRoomId });
+      }
+    });
+
+    document.getElementById('btn-leave-lobby').addEventListener('click', () => {
+      if (socket && currentRoomId) {
+        socket.emit('leave_room', { roomId: currentRoomId });
+      }
+      showScreen('menu');
+    });
+
+    // 6. Copy Code & Invite Link
+    document.getElementById('btn-copy-code').addEventListener('click', () => {
+      if (!currentRoomCode) return;
+      copyTextSafely(currentRoomCode, `Room Code ${currentRoomCode}`);
+    });
+
+    document.getElementById('btn-copy-link').addEventListener('click', () => {
+      if (!currentRoomCode) return;
+      const url = `${window.location.origin}/?room=${currentRoomCode}`;
+      copyTextSafely(url, 'Invite Link');
+    });
+
+    // 7. Tutorial & Sound toggles
+    document.getElementById('btn-menu-rules').addEventListener('click', () => {
+      document.getElementById('modal-tutorial').classList.remove('hidden');
+    });
+    document.getElementById('btn-game-menu').addEventListener('click', () => {
+      document.getElementById('modal-tutorial').classList.remove('hidden');
+    });
+    document.getElementById('btn-close-tutorial').addEventListener('click', () => {
+      document.getElementById('modal-tutorial').classList.add('hidden');
+    });
+
+    const toggleSoundFn = () => {
+      sounds.enabled = !sounds.enabled;
+      const text = sounds.enabled ? '🔊 SOUND: ON' : '🔇 SOUND: OFF';
+      document.getElementById('btn-menu-sound').innerText = text;
+      document.getElementById('btn-game-sound').innerText = sounds.enabled ? '🔊' : '🔇';
+    };
+    document.getElementById('btn-menu-sound').addEventListener('click', toggleSoundFn);
+    document.getElementById('btn-game-sound').addEventListener('click', toggleSoundFn);
+
+    // --- DEEP LINKING SUPPORT (?room=KTN-789) ---
+    window.addEventListener('DOMContentLoaded', () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room');
+      if (roomParam) {
+        document.getElementById('input-join-code').value = roomParam.toUpperCase();
+        // Highlight join button
+        document.getElementById('btn-join-party').classList.add('animate-pulse');
+      }
+    });
+  </script>
+</body>
+</html>
